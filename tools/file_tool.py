@@ -14,31 +14,58 @@ tools/file_tool.py
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Union
 
 from tools.base import Tool
 
+PathLike = Union[str, os.PathLike]
 
-def _safe_resolve(workspace: str, user_path: str) -> str:
+
+# ───────────────────────────────────────────────────────────────────
+# Sandbox
+# ───────────────────────────────────────────────────────────────────
+def _safe_resolve(workspace: PathLike, user_path: PathLike) -> Path:
     """
-    Проверяет, что итоговый путь остаётся внутри workspace.
-    Возвращает абсолютный путь или кидает PermissionError.
+    Резолвит пользовательский путь в абсолютный и проверяет, что итог
+    остаётся внутри workspace.
+
+    Используем Path.resolve() (а не просто os.path.abspath), потому что:
+      • resolve() разворачивает симлинки — иначе LLM может передать
+        /workspace/safe/../../etc/passwd и пройти проверку;
+      • resolve() нормализует регистр (важно на macOS, и не мешает на Linux);
+      • strict=False — путь может не существовать (нужно для write_file).
+
+    Возвращает Path или кидает PermissionError.
     """
-    workspace_abs = os.path.abspath(workspace)
-    if not user_path:
-        return workspace_abs
-    # Если путь относительный — склеиваем с workspace
-    candidate = (
-        user_path
-        if os.path.isabs(user_path)
-        else os.path.join(workspace_abs, user_path)
-    )
-    resolved = os.path.abspath(candidate)
-    # Проверка «внутри workspace»
-    if not (resolved == workspace_abs or resolved.startswith(workspace_abs + os.sep)):
+    if user_path is None or str(user_path).strip() == "":
+        return Path(workspace).resolve()
+
+    user_path_str = os.fspath(user_path)
+    candidate = Path(user_path_str)
+
+    # Относительный путь склеиваем с workspace; абсолютный оставляем как есть.
+    if not candidate.is_absolute():
+        candidate = Path(workspace) / candidate
+
+    try:
+        resolved = candidate.resolve(strict=False)
+    except OSError as e:
+        # Битый путь (например, слишком длинный) — это не Permission, это
+        # нормальная ошибка, которую LLM должна увидеть.
+        raise PermissionError(f"Cannot resolve path {user_path_str!r}: {e}") from e
+
+    workspace_root = Path(workspace).resolve()
+    # Корректная проверка «внутри»: добавляем os.sep, чтобы /workspace-evil
+    # не считался поддиректорией /workspace.
+    try:
+        resolved.relative_to(workspace_root)
+    except ValueError as e:
         raise PermissionError(
-            f"Path '{user_path}' resolves outside workspace '{workspace_abs}'."
-        )
+            f"Path {user_path_str!r} resolves outside workspace "
+            f"'{workspace_root}'. Refusing to operate."
+        ) from e
+
     return resolved
 
 
@@ -62,20 +89,39 @@ class ReadFile(Tool):
         "required": ["path"],
     }
 
+    # Жёсткий потолок, чтобы один гигантский лог не утопил контекст LLM.
+    MAX_CHARS = 50_000
+
     def __init__(self, workspace: str = "."):
         self.workspace = workspace
 
     async def execute(self, arguments: Dict[str, Any]) -> str:
-        path = _safe_resolve(self.workspace, arguments["path"])
-        if not os.path.isfile(path):
-            return f"[ERROR] Not a file: {path}"
+        path_arg = arguments.get("path")
+        if not path_arg:
+            return "[ERROR] 'path' argument is required for read_file."
+
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-        except Exception as e:  # noqa: BLE001
+            path = _safe_resolve(self.workspace, path_arg)
+        except PermissionError as e:
+            return f"[BLOCKED] {e}"
+
+        if not path.exists():
+            return f"[ERROR] File not found: {path}"
+        if not path.is_file():
+            return f"[ERROR] Not a regular file: {path}"
+
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except PermissionError as e:
+            return f"[BLOCKED] OS-level read denied for {path}: {e}"
+        except OSError as e:
             return f"[ERROR] Cannot read {path}: {e}"
-        if len(content) > 50_000:
-            content = content[:50_000] + "\n\n[...truncated; file is larger than 50k chars...]"
+
+        if len(content) > self.MAX_CHARS:
+            content = (
+                content[: self.MAX_CHARS]
+                + f"\n\n[...truncated; file is larger than {self.MAX_CHARS} chars...]"
+            )
         return content
 
 
@@ -107,16 +153,28 @@ class WriteFile(Tool):
         self.workspace = workspace
 
     async def execute(self, arguments: Dict[str, Any]) -> str:
-        path = _safe_resolve(self.workspace, arguments["path"])
+        path_arg = arguments.get("path")
+        if not path_arg:
+            return "[ERROR] 'path' argument is required for write_file."
+
+        content = arguments.get("content")
+        if not isinstance(content, str):
+            return "[ERROR] 'content' must be a string."
+
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(arguments["content"])
+            path = _safe_resolve(self.workspace, path_arg)
         except PermissionError as e:
             return f"[BLOCKED] {e}"
-        except Exception as e:  # noqa: BLE001
-            return f"[ERROR] Write failed: {e}"
-        return f"[OK] Wrote {len(arguments['content'])} bytes to {path}"
+
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        except PermissionError as e:
+            return f"[BLOCKED] OS-level write denied for {path}: {e}"
+        except OSError as e:
+            return f"[ERROR] Write failed for {path}: {e}"
+
+        return f"[OK] Wrote {len(content)} bytes to {path}"
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -147,30 +205,57 @@ class ListDir(Tool):
         "required": [],
     }
 
+    DEFAULT_MAX = 200
+    HARD_MAX = 5_000
+
     def __init__(self, workspace: str = "."):
         self.workspace = workspace
 
     async def execute(self, arguments: Dict[str, Any]) -> str:
         user_path = arguments.get("path", ".") or "."
-        path = _safe_resolve(self.workspace, user_path)
-        max_entries = int(arguments.get("max_entries", 200))
-        if not os.path.isdir(path):
+
+        try:
+            path = _safe_resolve(self.workspace, user_path)
+        except PermissionError as e:
+            return f"[BLOCKED] {e}"
+
+        if not path.exists():
+            return f"[ERROR] Directory not found: {path}"
+        if not path.is_dir():
             return f"[ERROR] Not a directory: {path}"
+
+        # Жёсткий потолок, чтобы LLM не заказала себе миллион записей.
+        try:
+            max_entries = int(arguments.get("max_entries", self.DEFAULT_MAX))
+        except (TypeError, ValueError):
+            return "[ERROR] 'max_entries' must be an integer."
+        if max_entries < 1:
+            return "[ERROR] 'max_entries' must be >= 1."
+        max_entries = min(max_entries, self.HARD_MAX)
 
         try:
             entries: List[str] = []
-            for name in sorted(os.listdir(path)):
-                if name.startswith("."):
+            for name in sorted(path.iterdir()):
+                if name.name.startswith("."):
                     continue
-                full = os.path.join(path, name)
-                if os.path.isdir(full):
-                    entries.append(f"📁 {name}/")
+                if name.is_dir():
+                    entries.append(f"📁 {name.name}/")
+                elif name.is_file():
+                    try:
+                        size = name.stat().st_size
+                    except OSError:
+                        size = -1  # сломанный симлинк, размер неизвестен
+                    entries.append(f"📄 {name.name}  ({size} B)")
                 else:
-                    size = os.path.getsize(full)
-                    entries.append(f"📄 {name}  ({size} B)")
+                    # Сокеты, fifo, блочные устройства — пометить явно.
+                    entries.append(f"🔗 {name.name}  (special)")
+
                 if len(entries) >= max_entries:
                     entries.append(f"... truncated at {max_entries} entries ...")
                     break
-        except Exception as e:  # noqa: BLE001
-            return f"[ERROR] list_dir failed: {e}"
+        except PermissionError as e:
+            return f"[BLOCKED] OS-level list denied for {path}: {e}"
+        except OSError as e:
+            return f"[ERROR] list_dir failed for {path}: {e}"
+
         return "\n".join(entries) if entries else "(empty directory)"

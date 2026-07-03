@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from core.models import ToolCall, ToolResult
 
 from tools.base import Tool
 from tools.bash_tool import ExecuteBash
-from tools.file_tool import ListDir, ReadFile, WriteFile
+from tools.file_tool import ListDir, ReadFile, WriteFile, _safe_resolve
 
 log = logging.getLogger("trinity.tools")
 
@@ -36,6 +37,8 @@ class ToolRegistry:
         self._tools: Dict[str, Tool] = {}
         # Файлы, которые были созданы/изменены (для UI)
         self.touched_paths: Set[str] = set()
+        # Файлы, которые были прочитаны (для UI/контекста)
+        self.read_paths: Set[str] = set()
         self._register_defaults()
 
     def _register_defaults(self) -> None:
@@ -64,6 +67,26 @@ class ToolRegistry:
     def list_schemas(self) -> List[Dict[str, Any]]:
         """OpenAI-схемы всех инструментов, для передачи в LLM."""
         return [t.to_openai_schema() for t in self._tools.values()]
+
+    def _track_path(self, name: str, arguments: Dict[str, Any]) -> None:
+        """
+        Запоминает путь, к которому обращался агент.
+        Резолвим относительно workspace, чтобы в UI не было сырых
+        '../' и дубликатов типа './foo' vs 'foo'.
+        """
+        raw = arguments.get("path")
+        if not raw:
+            return
+        try:
+            resolved = _safe_resolve(self.workspace, raw)
+            path_str = str(resolved)
+        except PermissionError:
+            # Не выезжает за песочницу — в UI не показываем, но и не падаем.
+            return
+        if name in ("write_file",):
+            self.touched_paths.add(path_str)
+        elif name == "read_file":
+            self.read_paths.add(path_str)
 
     async def execute(self, call: ToolCall, *, workspace: Optional[str] = None) -> ToolResult:
         """
@@ -94,11 +117,12 @@ class ToolRegistry:
             output = ""
             success = False
             error = f"{type(e).__name__}: {e}"
+            log.exception("tool %s crashed", call.name)
         dt = int((time.perf_counter() - t0) * 1000)
 
-        # Запоминаем «тронутые» файлы для write_file
-        if call.name == "write_file" and success and "path" in call.arguments:
-            self.touched_paths.add(call.arguments["path"])
+        # Запоминаем тронутые/прочитанные пути (только при успехе).
+        if success and call.name in ("read_file", "write_file"):
+            self._track_path(call.name, call.arguments)
 
         return ToolResult(
             tool_call_id=call.id,
