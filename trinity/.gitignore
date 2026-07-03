@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Trinity
+.env
+trinity_session
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Workspace (файлы, которые создал ExecutorAgent)
+workspace_sandbox/

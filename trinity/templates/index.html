@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trinity — Multi-Agent System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>🔱 Trinity <span class="muted">— Multi-Agent System</span></h1>
+        <p class="tagline">
+            Planner&nbsp;(NVIDIA) · Critic&nbsp;(NVIDIA) · Executor&nbsp;(Ollama)
+        </p>
+    </header>
+
+    <main>
+        <!-- ── Боковая панель: настройки ── -->
+        <aside id="sidebar">
+            <h2>⚙️ Настройки</h2>
+            <form id="settings-form">
+                <label>
+                    <span>NVIDIA API Key</span>
+                    <input type="password" name="nvidia_api_key"
+                           placeholder="nvapi-..." autocomplete="off">
+                    <small id="nvidia-status" class="muted">не задан</small>
+                </label>
+
+                <label>
+                    <span>Ollama URL</span>
+                    <input type="text" name="ollama_url"
+                           value="{{ default_ollama_url }}">
+                </label>
+
+                <details>
+                    <summary>Модели (advanced)</summary>
+                    <label>
+                        <span>Planner model</span>
+                        <input type="text" name="planner_model"
+                               value="{{ default_planner_model }}">
+                    </label>
+                    <label>
+                        <span>Critic model</span>
+                        <input type="text" name="critic_model"
+                               value="{{ default_critic_model }}">
+                    </label>
+                    <label>
+                        <span>Executor model</span>
+                        <input type="text" name="executor_model"
+                               value="{{ default_executor_model }}">
+                    </label>
+                </details>
+
+                <button type="submit">💾 Сохранить</button>
+                <div id="settings-status" class="muted"></div>
+            </form>
+        </aside>
+
+        <!-- ── Чат-зона ── -->
+        <section id="chat-panel">
+            <div id="messages">
+                <div class="msg info">
+                    👋 Привет! Заполни настройки слева и отправь задачу.<br>
+                    Например: <em>«Создай Python-скрипт, который парсит
+                    RSS-ленту Hacker News и сохраняет заголовки в JSON»</em>.
+                </div>
+            </div>
+
+            <form id="chat-form">
+                <textarea name="message" rows="3"
+                          placeholder="Опиши задачу для Trinity..." required></textarea>
+                <button type="submit" id="send-btn">▶️ Отправить</button>
+                <button type="button" id="stop-btn" disabled>⏹ Стоп</button>
+            </form>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
