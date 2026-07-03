@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────────
+# systemd/trinity.service
+#
+# Пользовательский юнит (не требует root): запускает uvicorn
+# в виртуальном окружении, созданном install.sh.
+#
+# Установка:
+#   mkdir -p ~/.config/systemd/user
+#   cp systemd/trinity.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now trinity.service
+#
+# Проверка:
+#   systemctl --user status trinity
+#   journalctl --user -u trinity -f
+#   curl http://127.0.0.1:8000/api/health
+#
+# Чтобы демон жил и без открытой сессии (logout из графической
+# оболочки), включите lingering:
+#   sudo loginctl enable-linger $USER
+# ─────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=Trinity — Multi-Agent System (FastAPI / uvicorn)
+Documentation=file://%h/Projects/multi_agents/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/multi_agents
+
+# Виртуальное окружение из install.sh
+Environment="PATH=%h/Projects/multi_agents/.venv/bin:/usr/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+# Подхватываем .env, если есть
+EnvironmentFile=-%h/Projects/multi_agents/.env
+
+ExecStart=%h/Projects/multi_agents/.venv/bin/uvicorn main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --no-server-header \
+    --proxy-headers
+
+# Лёгкий graceful-shutdown: SIGTERM → uvicorn корректно
+# закрывает SSE-стримы, не обрывая активные задачи.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+SendSIGKILL=yes
+
+# Автоперезапуск при падении, но не при чистом systemctl stop
+Restart=on-failure
+RestartSec=3
+
+# ── Контроль ресурсов ──────────────────────────────────────────
+# Trinity держит три LLM-клиента (NVIDIA + Ollama), но тяжёлой
+# работы в самом процессе мало. Лимиты — с запасом; при
+# появлении крупных моделей поднять.
+MemoryMax=2G
+MemoryHigh=1500M
+CPUQuota=150%
+TasksMax=64
+
+# Логи в journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trinity
+
+# Таймаут запуска: 60 с хватает на холодный старт uvicorn
+TimeoutStartSec=60
+
+[Install]
+WantedBy=default.target

@@ -1,4 +1,18 @@
 # Trinity Multi-Agent System - Dependencies
+#
+# ─────────────────────────────────────────────────────────────────
+# Платформенные форки pydantic-core / aiohttp
+# ─────────────────────────────────────────────────────────────────
+# На Arch Linux glibc + свежий gcc дают корректный build для
+# pydantic-core (Rust/maturin) и aiohttp (Cython). Без форка —
+# 99% что PyPI подвезёт wheels, но иногда приходится прибивать
+# минор, у которого гарантированно есть linux x86_64 wheel.
+#
+# pip поддерживает PEP 508 environment markers прямо в
+# requirements.txt, поэтому дубликаты запрещены: для каждой
+# платформы — ровно одна строка.
+#
+# ─────────────────────────────────────────────────────────────────
 # Core web framework
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
@@ -7,6 +21,7 @@ python-multipart==0.0.9
 
 # Data validation
 pydantic==2.9.2
+pydantic-core==2.23.4
 pydantic-settings==2.5.2
 
 # HTTP clients for LLM APIs
@@ -18,3 +33,12 @@ itsdangerous==2.2.0
 
 # Utilities
 python-dotenv==1.0.1
+
+# ─────────────────────────────────────────────────────────────────
+# Linux: uvloop + httptools ускоряют uvicorn в 1.5–2×, что важно
+# для SSE-стрима /api/chat. Rust-стек под сборку уже стоит из
+# install.sh (rust + base-devel). На Windows/macOS uvloop не
+# нужен — там работает нативный asyncio-proactor.
+# ─────────────────────────────────────────────────────────────────
+uvloop==0.21.0; sys_platform == "linux"
+httptools==0.6.4; sys_platform == "linux"
