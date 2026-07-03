@@ -262,15 +262,48 @@ async def chat(request: Request, payload: ChatRequest):
             ),
         ).to_sse()
 
+        # Защитный «ограничитель»: гарантируем, что стрим всегда
+        # корректно завершается — даже если менеджер вернёт None,
+        # упадёт с исключением или клиент отвалится посреди итерации.
         try:
-            async for ev in manager.run_task(payload.message):
-                yield ev.to_sse()
+            gen = manager.run_task(payload.message)
+            while True:
+                try:
+                    ev = await gen.__anext__()
+                except StopAsyncIteration:
+                    # Нормальное завершение генератора run_task.
+                    break
+                if ev is None:
+                    # Менеджер иногда может вернуть None-событие; скипаем.
+                    continue
+                # Защита на случай, если у ProgressEvent нет to_sse()
+                sse_payload = getattr(ev, "to_sse", None)
+                if not callable(sse_payload):
+                    log.warning("event has no to_sse() — skipping: %r", ev)
+                    continue
+                yield sse_payload()
         except asyncio.CancelledError:
-            log.warning("client disconnected mid-stream")
-            raise
+            # Клиент закрыл SSE-соединение — корректно гасим стрим.
+            log.info("client disconnected (CancelledError) mid-stream")
+            try:
+                await gen.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        except GeneratorExit:
+            log.info("client disconnected (GeneratorExit) mid-stream")
+            return
         except Exception as e:  # noqa: BLE001
+            # Любая нештатная ситуация в менеджере: логируем и
+            # отдаём клиенту финальный SSE-error-event, чтобы UI
+            # не завис в «бесконечной загрузке».
             log.exception("unhandled error in run_task")
-            yield ProgressEvent(kind="error", content=f"Unhandled error: {e}").to_sse()
+            try:
+                yield ProgressEvent(
+                    kind="error", content=f"Unhandled error: {e}"
+                ).to_sse()
+            except Exception:  # noqa: BLE001
+                pass
 
     return StreamingResponse(
         event_stream(),

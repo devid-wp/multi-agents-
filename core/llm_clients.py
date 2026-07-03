@@ -189,6 +189,40 @@ class NvidiaClient:
         providers: Optional[Dict[AgentName, Tuple[Any, ...]]] = None,
         provider_resolver: Optional[NvidiaProviderResolver] = None,
     ):
+        # ── DEBUG_INIT: что реально долетело до конструктора ───────
+        # Печатаем ДО любых нормализаций, чтобы видеть ровно то значение,
+        # которое пришло из manager.py / UI / cookie-сессии.
+        try:
+            if providers:
+                for _agent, _entry in providers.items():
+                    if isinstance(_entry, tuple) and len(_entry) == 3:
+                        _k, _b, _m = _entry
+                    else:
+                        _k, _b = _entry  # type: ignore[misc]
+                        _m = None
+                    print(
+                        f"DEBUG_INIT: agent={_agent.value} "
+                        f"base_url={_b!r} model_url={_m!r}"
+                    )
+            else:
+                print(f"DEBUG_INIT: base_url={base_url!r} model_url=None")
+        except Exception as _e:  # noqa: BLE001 — диагностика не должна падать
+            print(f"DEBUG_INIT: failed to log input: {_e!r}")
+
+        # ── Принудительный rewrite «голого /v1» ─────────────────────
+        # Если в UI ввели только корень API (…/v1) и НЕ задали model_url —
+        # добиваем /chat/completions прямо в base_url, чтобы запрос гарантированно
+        # ушёл на реальный эндпоинт, а не на корень, который вернёт 404.
+        # Это срабатывает ТОЛЬКО в режиме single-provider (api_key задан).
+        if providers is None and provider_resolver is None and api_key:
+            _norm = (base_url or "").rstrip("/")
+            if _norm.endswith("/v1"):
+                base_url = _norm + "/chat/completions"
+                print(
+                    f"DEBUG_INIT: REWRITE bare /v1 -> {base_url!r} "
+                    f"(model_url is empty, single-provider mode)"
+                )
+
         self._timeout = settings.llm_timeout_seconds
 
         # Режим «multi-provider»: словарь AgentName → (api_key, base_url[, model_url])
@@ -201,6 +235,14 @@ class NvidiaClient:
                 else:
                     key, url = entry  # type: ignore[misc]
                     model_url = None
+                # Тот же rewrite для multi-provider-режима: если в UI прилетел
+                # «голый» …/v1, добиваем /chat/completions. Но ТОЛЬКО при пустом
+                # model_url, чтобы не сломать легитимный override.
+                if (url or "").rstrip("/").endswith("/v1") and not model_url:
+                    url = url.rstrip("/") + "/chat/completions"
+                    print(
+                        f"DEBUG_INIT: REWRITE bare /v1 for {agent.value} -> {url!r}"
+                    )
                 self._providers[agent] = NvidiaProvider(
                     api_key=key, base_url=url, model_url=model_url,
                 )
@@ -286,13 +328,22 @@ class NvidiaClient:
 
         # ── Debug-логирование: видно, КУДА реально идёт запрос ─────
         # Замаскируем api_key, чтобы он случайно не утек в логи/консоль.
+        headers = self._headers(provider)
         masked_headers = {
-            **self._headers(provider),
-            "Authorization": f"Bearer {provider.api_key[:6]}…{provider.api_key[-4:]}",
+            **headers,
+            "Authorization": f"Bearer {provider.api_key[:6]}...{provider.api_key[-4:]}",
         }
-        print(f"[NVIDIA→{agent.value}] POST {url}")
-        print(f"[NVIDIA→{agent.value}] headers: {masked_headers}")
-        print(f"[NVIDIA→{agent.value}] payload: {json.dumps(payload, ensure_ascii=False)[:1500]}")
+        print(f"[NVIDIA->{agent.value}] POST {url}")
+        print(f"[NVIDIA->{agent.value}] headers: {masked_headers}")
+        print(f"[NVIDIA->{agent.value}] payload: {json.dumps(payload, ensure_ascii=False)[:1500]}")
+        # ── DEBUG_HEADERS / DEBUG_PAYLOAD_MODEL: хирургическая диагностика ──
+        # Прямо перед отправкой: какие именно ключи заголовков уходят
+        # и какое имя модели в payload. Помогает отличить «битый заголовок»
+        # от «битой модели» при 404.
+        print(f"DEBUG_HEADERS: {list(headers.keys())}")
+        print(f"DEBUG_PAYLOAD_MODEL: {payload.get('model')}")
+        if tools:
+            print(f"DEBUG_TOOLS: {len(tools)} tool schema(s) sent: {[t.get('function', {}).get('name', '?') for t in tools]}")
 
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             try:

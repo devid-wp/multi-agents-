@@ -96,6 +96,20 @@ class Agent(abc.ABC):
         tool_schemas: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatMessage:
         """Универсальный вызов LLM (nvidia или ollama)."""
+        # ── DEBUG_TOOLS_CALL: какие схемы уходят в LLM для этого агента ──
+        # Critic принципиально не должен получать tools (он только ревьюит план),
+        # а gemma-2-27b-it и некоторые другие модели NVIDIA NIM возвращают 404
+        # или 400, если в payload есть секция `tools`, которую они не поддерживают.
+        # На Planner tools нужны; на Critic — нет. Жёстко отфильтруем здесь.
+        if self.name == AgentName.CRITIC:
+            if tool_schemas:
+                print(
+                    f"DEBUG_TOOLS_CALL: {self.name.value} — "
+                    f"stripping {len(tool_schemas)} tool schema(s) "
+                    f"(critic must not request tools)"
+                )
+            tool_schemas = None
+
         if self.LLM_PROVIDER == "nvidia":
             if not self._nvidia:
                 raise LLMError(f"{self.name}: NVIDIA client not configured")
