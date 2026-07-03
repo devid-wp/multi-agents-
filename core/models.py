@@ -105,23 +105,44 @@ class ToolResult(BaseModel):
 class SettingsPayload(BaseModel):
     """Тело POST /api/settings — данные из формы."""
 
-    nvidia_api_key: Optional[str] = None
+    # Planner (NVIDIA)
+    planner_api_key: Optional[str] = None
+    planner_base_url: Optional[str] = None
+    planner_model_url: Optional[str] = None
+    # Critic (NVIDIA)
+    critic_api_key: Optional[str] = None
+    critic_base_url: Optional[str] = None
+    critic_model_url: Optional[str] = None
+    # Ollama (Executor)
     ollama_url: Optional[str] = None
+    # Models
     planner_model: Optional[str] = None
     critic_model: Optional[str] = None
     executor_model: Optional[str] = None
+    # Legacy single-key support (если прислали — размажем по обоим)
+    nvidia_api_key: Optional[str] = None
 
 
 class SettingsResponse(BaseModel):
     """Ответ GET /api/settings — для восстановления формы."""
 
-    has_nvidia: bool
+    # Наличие ключей (без самих значений)
+    has_planner_key: bool
+    has_critic_key: bool
+    # Маски ключей
+    planner_key_masked: Optional[str] = None
+    critic_key_masked: Optional[str] = None
+    # URL
+    planner_base_url: str
+    critic_base_url: str
     ollama_url: str
+    # Полные URL моделей (опционально)
+    planner_model_url: Optional[str] = None
+    critic_model_url: Optional[str] = None
+    # Models
     planner_model: str
     critic_model: str
     executor_model: str
-    # Сам ключ никогда не возвращается клиенту!
-    nvidia_key_masked: Optional[str] = None
 
 
 class ChatRequest(BaseModel):

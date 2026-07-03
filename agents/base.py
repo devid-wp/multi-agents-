@@ -105,6 +105,7 @@ class Agent(abc.ABC):
                 temperature=temperature,
                 max_tokens=max_tokens,
                 tools=tool_schemas,
+                agent=self.name,  # ← выбираем ключ/URL для конкретного агента
             )
         if self.LLM_PROVIDER == "ollama":
             if not self._ollama:

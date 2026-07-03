@@ -50,19 +50,36 @@ class AgentManager:
         self.creds = creds
         self.tools = ToolRegistry(workspace=settings.workspace_dir)
 
-        # ── LLM-клиенты (ленивая инициализация: создаём только то, что нужно) ──
+        # ── LLM-клиенты ───────────────────────────────────────────
+        # NvidiaClient маршрутизирует запросы по AgentName:
+        # Planner идёт к (planner_api_key, planner_base_url[, planner_model_url]),
+        # Critic — к (critic_api_key, critic_base_url[, critic_model_url]).
+        # 3-й элемент кортежа (model_url) — опциональный полный URL,
+        # перекрывает {base_url}/chat/completions, если у агента свой NIM-эндпоинт.
         self._nvidia: Optional[NvidiaClient] = None
-        if creds.has_nvidia():
-            self._nvidia = NvidiaClient(
-                api_key=creds.nvidia_api_key or "",
-                base_url="https://integrate.api.nvidia.com/v1",
+        providers: Dict = {}
+        if creds.has_planner_key():
+            providers[AgentName.PLANNER] = (
+                creds.planner_api_key or "",
+                creds.planner_base_url,
+                creds.planner_model_url,
             )
+        if creds.has_critic_key():
+            providers[AgentName.CRITIC] = (
+                creds.critic_api_key or "",
+                creds.critic_base_url,
+                creds.critic_model_url,
+            )
+        if providers:
+            self._nvidia = NvidiaClient(providers=providers)
 
         self._ollama: Optional[OllamaClient] = None
         if creds.has_ollama():
             self._ollama = OllamaClient(base_url=creds.ollama_url)
 
-        # ── Агенты ─────────────────────────────────────────────────
+        # ── Агенты ────────────────────────────────────────────────
+        # Planner/Critic получают ОДИН И ТОТ ЖЕ NvidiaClient —
+        # он сам разберётся, чей ключ использовать, по self.name.
         self.planner = PlannerAgent(
             model=creds.planner_model,
             nvidia=self._nvidia,
@@ -85,11 +102,16 @@ class AgentManager:
     def readiness_report(self) -> dict:
         """Возвращает, какие компоненты готовы к работе."""
         return {
-            "nvidia_configured": self._nvidia is not None,
+            "planner_configured": self.creds.has_planner_key(),
+            "critic_configured": self.creds.has_critic_key(),
             "ollama_configured": self._ollama is not None,
             "planner_model": self.planner.MODEL_NAME,
             "critic_model": self.critic.MODEL_NAME,
             "executor_model": self.executor.MODEL_NAME,
+            "planner_base_url": self.creds.planner_base_url,
+            "critic_base_url": self.creds.critic_base_url,
+            "planner_model_url": self.creds.planner_model_url,
+            "critic_model_url": self.creds.critic_model_url,
         }
 
     # ──────────────────────────────────────────────────────────────

@@ -4,9 +4,9 @@ main.py
 FastAPI entry-point для Trinity Multi-Agent System.
 
 Эндпоинты:
-  GET  /                  — главная страница (форма + чат)
-  GET  /api/settings      — текущие настройки пользователя (ключ маскируется)
-  POST /api/settings      — сохранить настройки в сессию
+  GET  /                  — главная страница (чат + модалка настроек)
+  GET  /api/settings      — текущие настройки пользователя (ключи маскируются)
+  POST /api/settings      — сохранить настройки в сессии
   POST /api/chat          — отправить задачу, получить SSE-стрим
   GET  /api/health        — healthcheck
 
@@ -25,13 +25,18 @@ import sys
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from core.config import UserCredentials, settings
-from core.models import ChatRequest, ProgressEvent, SettingsPayload, SettingsResponse
+from core.config import DEFAULT_NVIDIA_URL, UserCredentials, settings
+from core.models import (
+    ChatRequest,
+    ProgressEvent,
+    SettingsPayload,
+    SettingsResponse,
+)
 from core.session import get_credentials, mask_key, save_credentials
 
 # Делаем корень проекта доступным для импорта `core`, `agents`, `tools`
@@ -45,6 +50,25 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("trinity.app")
+
+
+# ───────────────────────────────────────────────────────────────────
+# Helpers
+# ───────────────────────────────────────────────────────────────────
+def _validate_url(value: Optional[str]) -> Optional[str]:
+    """
+    Простейшая валидация URL — должна быть http(s)://...
+    Пустое значение разрешаем (значит «не менять»).
+    """
+    if value is None or value.strip() == "":
+        return None
+    v = value.strip()
+    if not (v.startswith("http://") or v.startswith("https://")):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid URL: {v!r}. Must start with http:// or https://",
+        )
+    return v.rstrip("/") or v
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -62,7 +86,7 @@ async def lifespan(app: FastAPI):
 # ───────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Trinity — Multi-Agent System",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -76,13 +100,14 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 # ───────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Рендерит интерфейс с формой настроек и окном чата."""
+    """Рендерит ChatGPT-подобный интерфейс."""
     creds = get_credentials(request)
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
             "request": request,
-            "default_nvidia_url": "https://integrate.api.nvidia.com/v1",
+            "default_nvidia_url": DEFAULT_NVIDIA_URL,
             "default_ollama_url": creds.ollama_url or "http://localhost:11434",
             "default_planner_model": creds.planner_model,
             "default_critic_model": creds.critic_model,
@@ -98,12 +123,18 @@ async def index(request: Request):
 async def read_settings(request: Request):
     creds = get_credentials(request)
     return SettingsResponse(
-        has_nvidia=creds.has_nvidia(),
+        has_planner_key=creds.has_planner_key(),
+        has_critic_key=creds.has_critic_key(),
+        planner_key_masked=mask_key(creds.planner_api_key),
+        critic_key_masked=mask_key(creds.critic_api_key),
+        planner_base_url=creds.planner_base_url,
+        critic_base_url=creds.critic_base_url,
+        planner_model_url=creds.planner_model_url,
+        critic_model_url=creds.critic_model_url,
         ollama_url=creds.ollama_url,
         planner_model=creds.planner_model,
         critic_model=creds.critic_model,
         executor_model=creds.executor_model,
-        nvidia_key_masked=mask_key(creds.nvidia_api_key),
     )
 
 
@@ -111,14 +142,41 @@ async def read_settings(request: Request):
 async def write_settings(request: Request, payload: SettingsPayload):
     """Сохраняет настройки в подписанной cookie-сессии."""
     current = get_credentials(request)
-    # Мержим: пустые поля = оставляем прежние
+
+    # Валидация URL
+    planner_url = _validate_url(payload.planner_base_url)
+    critic_url = _validate_url(payload.critic_base_url)
+    ollama_url = _validate_url(payload.ollama_url)
+    planner_model_url = _validate_url(payload.planner_model_url)
+    critic_model_url = _validate_url(payload.critic_model_url)
+
+    # Мержим: для ключей/base URL "пусто = оставить прежнее".
+    # Для model_url "пусто = сбросить переопределение" (вернуть на дефолт),
+    # потому что пользователь может осознанно хотеть отключить кастомный URL.
     new = UserCredentials(
-        nvidia_api_key=(
-            payload.nvidia_api_key
-            if payload.nvidia_api_key not in (None, "")
-            else current.nvidia_api_key
+        planner_api_key=(
+            payload.planner_api_key
+            if payload.planner_api_key not in (None, "")
+            else current.planner_api_key
         ),
-        ollama_url=payload.ollama_url or current.ollama_url,
+        planner_base_url=planner_url or current.planner_base_url,
+        planner_model_url=(
+            planner_model_url
+            if payload.planner_model_url is not None
+            else current.planner_model_url
+        ),
+        critic_api_key=(
+            payload.critic_api_key
+            if payload.critic_api_key not in (None, "")
+            else current.critic_api_key
+        ),
+        critic_base_url=critic_url or current.critic_base_url,
+        critic_model_url=(
+            critic_model_url
+            if payload.critic_model_url is not None
+            else current.critic_model_url
+        ),
+        ollama_url=ollama_url or current.ollama_url,
         planner_model=payload.planner_model or current.planner_model,
         critic_model=payload.critic_model or current.critic_model,
         executor_model=payload.executor_model or current.executor_model,
@@ -127,9 +185,15 @@ async def write_settings(request: Request, payload: SettingsPayload):
     resp = JSONResponse(
         {
             "ok": True,
-            "has_nvidia": new.has_nvidia(),
+            "has_planner_key": new.has_planner_key(),
+            "has_critic_key": new.has_critic_key(),
+            "planner_key_masked": mask_key(new.planner_api_key),
+            "critic_key_masked": mask_key(new.critic_api_key),
+            "planner_base_url": new.planner_base_url,
+            "critic_base_url": new.critic_base_url,
+            "planner_model_url": new.planner_model_url,
+            "critic_model_url": new.critic_model_url,
             "ollama_url": new.ollama_url,
-            "nvidia_key_masked": mask_key(new.nvidia_api_key),
         }
     )
     resp.set_cookie(
@@ -151,7 +215,7 @@ async def health():
 
 
 # ───────────────────────────────────────────────────────────────────
-# Chat (SSE-стрим)
+# Chat (SSE-стрим) — протокол не меняем
 # ───────────────────────────────────────────────────────────────────
 @app.post("/api/chat")
 async def chat(request: Request, payload: ChatRequest):
@@ -166,7 +230,12 @@ async def chat(request: Request, payload: ChatRequest):
     if payload.ephemeral_credentials:
         ep = payload.ephemeral_credentials
         creds = UserCredentials(
-            nvidia_api_key=ep.nvidia_api_key or creds.nvidia_api_key,
+            planner_api_key=ep.planner_api_key or creds.planner_api_key,
+            planner_base_url=ep.planner_base_url or creds.planner_base_url,
+            planner_model_url=ep.planner_model_url or creds.planner_model_url,
+            critic_api_key=ep.critic_api_key or creds.critic_api_key,
+            critic_base_url=ep.critic_base_url or creds.critic_base_url,
+            critic_model_url=ep.critic_model_url or creds.critic_model_url,
             ollama_url=ep.ollama_url or creds.ollama_url,
             planner_model=ep.planner_model or creds.planner_model,
             critic_model=ep.critic_model or creds.critic_model,
@@ -183,11 +252,14 @@ async def chat(request: Request, payload: ChatRequest):
         ready = manager.readiness_report()
         yield ProgressEvent(
             kind="info",
-            content=f"Конфигурация: NVIDIA={'✓' if ready['nvidia_configured'] else '✗'}, "
-                    f"Ollama={'✓' if ready['ollama_configured'] else '✗'}; "
-                    f"Planner={ready['planner_model']}, "
-                    f"Critic={ready['critic_model']}, "
-                    f"Executor={ready['executor_model']}",
+            content=(
+                f"Конфигурация: Planner={'✓' if ready['planner_configured'] else '✗'}, "
+                f"Critic={'✓' if ready['critic_configured'] else '✗'}, "
+                f"Ollama={'✓' if ready['ollama_configured'] else '✗'}; "
+                f"Planner={ready['planner_model']}, "
+                f"Critic={ready['critic_model']}, "
+                f"Executor={ready['executor_model']}"
+            ),
         ).to_sse()
 
         try:

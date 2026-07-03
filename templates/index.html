@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trinity — Multi-Agent System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+
+    <!-- ── Sidebar: история чатов + new chat + settings ── -->
+    <aside id="sidebar">
+        <button id="new-chat-btn" class="sidebar-action">
+            <span class="icon">＋</span>
+            <span>Новый чат</span>
+        </button>
+
+        <nav id="chat-list" aria-label="История чатов">
+            <!-- чаты рендерятся JS -->
+        </nav>
+
+        <div class="sidebar-footer">
+            <button id="settings-btn" class="sidebar-action">
+                <span class="icon">⚙</span>
+                <span>Настройки</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- ── Центральная chat-зона ── -->
+    <main id="chat-area">
+        <header id="chat-header">
+            <h2 id="chat-title">Новый чат</h2>
+            <span id="chat-status" class="muted"></span>
+        </header>
+
+        <section id="messages" aria-live="polite">
+            <div class="msg-row msg-row--assistant">
+                <div class="bubble bubble--assistant">
+                    👋 Привет! Это Trinity — мульти-агентная система.<br>
+                    Открой <strong>⚙ Настройки</strong>, чтобы задать API-ключи
+                    для <em>Planner</em> и <em>Critic</em>, затем отправь задачу.<br><br>
+                    Например: <em>«Создай Python-скрипт, который парсит
+                    RSS-ленту Hacker News и сохраняет заголовки в JSON»</em>.
+                </div>
+            </div>
+        </section>
+
+        <form id="chat-form">
+            <textarea id="chat-input" name="message" rows="1"
+                      placeholder="Опиши задачу для Trinity…  (Shift+Enter — перенос)"
+                      required></textarea>
+            <div class="chat-form-actions">
+                <button type="button" id="stop-btn" disabled title="Остановить">⏹</button>
+                <button type="submit" id="send-btn" title="Отправить">▶</button>
+            </div>
+        </form>
+    </main>
+
+</div>
+
+<!-- ── Settings modal ── -->
+<div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card">
+        <header class="modal-header">
+            <h2 id="settings-title">⚙ Настройки</h2>
+            <button type="button" class="modal-close" data-close aria-label="Закрыть">×</button>
+        </header>
+
+        <form id="settings-form" class="modal-body">
+            <fieldset>
+                <legend>Planner (NVIDIA NIM)</legend>
+                <label>
+                    <span>API Key</span>
+                    <input type="password" name="planner_api_key"
+                           placeholder="nvapi-…" autocomplete="off">
+                    <small id="planner-key-status" class="muted">не задан</small>
+                </label>
+                <label>
+                    <span>Base URL</span>
+                    <input type="text" name="planner_base_url"
+                           value="{{ default_nvidia_url }}">
+                </label>
+                <label>
+                    <span>Model URL <small class="muted">(опц., перекрывает Base URL)</small></span>
+                    <input type="text" name="planner_model_url"
+                           placeholder="https://integrate.api.nvidia.com/v1/models/&lt;model&gt;/infer">
+                </label>
+                <label>
+                    <span>Модель</span>
+                    <input type="text" name="planner_model"
+                           value="{{ default_planner_model }}">
+                </label>
+            </fieldset>
+
+            <fieldset>
+                <legend>Critic (NVIDIA NIM)</legend>
+                <label>
+                    <span>API Key</span>
+                    <input type="password" name="critic_api_key"
+                           placeholder="nvapi-…" autocomplete="off">
+                    <small id="critic-key-status" class="muted">не задан</small>
+                </label>
+                <label>
+                    <span>Base URL</span>
+                    <input type="text" name="critic_base_url"
+                           value="{{ default_nvidia_url }}">
+                </label>
+                <label>
+                    <span>Model URL <small class="muted">(опц., перекрывает Base URL)</small></span>
+                    <input type="text" name="critic_model_url"
+                           placeholder="https://integrate.api.nvidia.com/v1/models/&lt;model&gt;/infer">
+                </label>
+                <label>
+                    <span>Модель</span>
+                    <input type="text" name="critic_model"
+                           value="{{ default_critic_model }}">
+                </label>
+            </fieldset>
+
+            <fieldset>
+                <legend>Executor (Ollama, локально)</legend>
+                <label>
+                    <span>Ollama URL</span>
+                    <input type="text" name="ollama_url"
+                           value="{{ default_ollama_url }}">
+                </label>
+                <label>
+                    <span>Модель</span>
+                    <input type="text" name="executor_model"
+                           value="{{ default_executor_model }}">
+                </label>
+            </fieldset>
+
+            <div class="modal-footer">
+                <span id="settings-status" class="muted"></span>
+                <button type="submit" class="btn-primary">💾 Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
