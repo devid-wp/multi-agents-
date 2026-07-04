@@ -40,7 +40,9 @@ from fastapi.templating import Jinja2Templates
 
 from core.config import DEFAULT_NVIDIA_URL, UserCredentials, settings
 from core.diagnostics import diagnostics_bus
+from pydantic import BaseModel
 from core.models import (
+    AgentName,
     ChatRequest,
     ProgressEvent,
     SettingsPayload,
@@ -113,6 +115,24 @@ app.mount(
     StaticFiles(directory=UI_DIR, html=True, check_dir=False),
     name="ui",
 )
+
+ACTIVE_AGENT: AgentName = AgentName.PLANNER
+
+
+class AgentSwitchPayload(BaseModel):
+    agent: AgentName
+
+
+@app.get("/api/agents/active")
+async def get_active_agent():
+    return {"agent": ACTIVE_AGENT}
+
+
+@app.post("/api/agents/switch")
+async def switch_agent(payload: AgentSwitchPayload):
+    global ACTIVE_AGENT
+    ACTIVE_AGENT = payload.agent
+    return {"agent": ACTIVE_AGENT}
 
 
 # ───────────────────────────────────────────────────────────────────

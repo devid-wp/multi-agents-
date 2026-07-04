@@ -20,12 +20,14 @@
   // 1. Constants & config
   // ════════════════════════════════════════════════════════════
   const ENDPOINTS = {
-    chat:        "/api/chat",
-    wsTree:      "/api/workspace/tree",       // GET ?path=. &hidden=0|1
-    wsStream:    "/api/workspace/stream",     // GET, persistent SSE
-    settingsGet: "/api/settings",
-    settingsSet: "/api/settings",
-    health:      "/api/health",
+    chat:          "/api/chat",
+    agentsActive:  "/api/agents/active",
+    agentsSwitch:  "/api/agents/switch",
+    wsTree:        "/api/workspace/tree",       // GET ?path=. &hidden=0|1
+    wsStream:      "/api/workspace/stream",     // GET, persistent SSE
+    settingsGet:   "/api/settings",
+    settingsSet:   "/api/settings",
+    health:        "/api/health",
   };
 
   const SSE_BACKOFF_MS = [500, 1000, 2000, 4000, 5000];  // capped at 5s
@@ -188,8 +190,18 @@
         signal: controller.signal,
       });
       if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        onEvent({ kind: "error", content: `HTTP ${res.status}: ${truncate(txt, 400)}` });
+        let bodyText = "";
+        try {
+          bodyText = await res.text();
+        } catch (_err) {
+          bodyText = "<unreadable response>";
+        }
+        onEvent({ kind: "error", content: `HTTP ${res.status}: ${truncate(bodyText, 400)}` });
+        return;
+      }
+      if (!res.body) {
+        const bodyText = await res.text().catch(() => "");
+        onEvent({ kind: "error", content: `No response stream: ${truncate(bodyText, 400)}` });
         return;
       }
       reader = res.body.getReader();
@@ -210,6 +222,16 @@
             onEvent(JSON.parse(json));
           } catch (err) {
             console.warn("[chat] bad json frame", json, err);
+          }
+        }
+      }
+      if (buffer.trim().startsWith("data:")) {
+        const json = buffer.trim().slice(5).trim();
+        if (json) {
+          try {
+            onEvent(JSON.parse(json));
+          } catch (err) {
+            console.warn("[chat] bad json frame on flush", json, err);
           }
         }
       }
@@ -288,7 +310,7 @@
       settingsStat.style.color = "var(--error)";
     }
   }
-
+console.log("hello world ")
   // ════════════════════════════════════════════════════════════
   // 6. Live log stream and command bridge
   // ════════════════════════════════════════════════════════════
@@ -326,6 +348,46 @@
       chatContainerEl.innerHTML = "<div class=\"log-header\">Live Log Stream</div>";
     }
     state.bridge = [];
+  }
+
+  async function refreshActiveAgent() {
+    try {
+      const res = await fetch(ENDPOINTS.agentsActive, { method: "GET" });
+      if (!res.ok) return;
+      const data = await res.json();
+      state.selectedAgent = data.agent || state.selectedAgent;
+      setActiveAgentButton(state.selectedAgent);
+      updateAgentIndicatorState(state.selectedAgent, "ready");
+    } catch (err) {
+      console.warn("Failed to refresh active agent", err);
+    }
+  }
+
+  async function switchAgent(agent) {
+    if (!agent || state.running) return;
+    const button = $(`.agent-btn[data-agent="${agent}"]`);
+    if (button) button.disabled = true;
+
+    try {
+      const res = await fetch(ENDPOINTS.agentsSwitch, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent }),
+      });
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        throw new Error(`Failed to switch agent: ${res.status} ${truncate(errBody, 300)}`);
+      }
+      const data = await res.json();
+      state.selectedAgent = data.agent || agent;
+      setActiveAgentButton(state.selectedAgent);
+      updateAgentIndicatorState(state.selectedAgent, "ready");
+    } catch (err) {
+      console.warn("switchAgent failed", err);
+      renderBridgeEvent({ kind: "error", agent: "manager", content: String(err), timestamp: Date.now() / 1000 });
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
 
   function cardClassForEvent(ev) {
@@ -621,7 +683,7 @@
   // ════════════════════════════════════════════════════
   // 10. boot()
   // ════════════════════════════════════════════════════════════
-  function boot() {
+  async function boot() {
     // Settings
     settingsForm.addEventListener("submit", saveSettings);
     modal.addEventListener("click", (e) => { if (e.target.matches("[data-close]")) closeSettings(); });
@@ -650,11 +712,10 @@
       button.addEventListener("click", () => {
         const agent = button.dataset.agent;
         if (!agent) return;
-        switchAgent(agent);
+        void switchAgent(agent);
       });
     });
-    setActiveAgentButton(state.selectedAgent);
-    updateAgentIndicatorState(state.selectedAgent, "ready");
+    await refreshActiveAgent();
 
     // Sidebar toggle
     $("#btn-sidebar-toggle").addEventListener("click", toggleSidebar);
