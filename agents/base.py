@@ -49,6 +49,10 @@ class AgentContext:
     tools: ToolRegistry = field(default_factory=ToolRegistry)
     # Сколько итераций tool-calling разрешено
     max_tool_iterations: int = 5
+    # Накапливается во время Agent._run_tools — каждый ToolResult,
+    # выполненный в рамках этого прогона. Executor использует для
+    # финального отчёта; Planner/Critic игнорируют.
+    tool_outcomes: List[ToolResult] = field(default_factory=list)
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -137,11 +141,23 @@ class Agent(abc.ABC):
     @staticmethod
     def parse_json_tool_calls(content: str) -> List[ToolCall]:
         """
-        Cline-подобный парсинг: модель возвращает JSON в блоках ```json ... ```.
-        Возвращает список ToolCall. Если ничего нет — [].
+        Парсит tool-вызовы из текстового ответа LLM.
+
+        Поддерживает три формата (порядок приоритета — сверху вниз):
+          1. ```json {name, arguments}```   — Cline-style, то, что Ollama
+             (qwen2.5-coder) обычно эмитит.
+          2. <tool_call>{...}</tool_call>       — Hermes / OpenAI tool-call
+             xml-style. Многие NVIDIA NIM-модели используют именно его.
+          3. tool_call_id / function_call / bare JSON — единичные крайние
+             случаи (например, llama-3.1 любит «action: read_file(...)»).
+
+        Если ничего не найдено — возвращает [].
+        При наличии нативного response.tool_calls (OpenAI-стиль) — этот
+        метод НЕ вызывается, нативный путь имеет приоритет.
         """
         calls: List[ToolCall] = []
-        # Ищем все ```json ... ``` блоки
+
+        # ── 1) Cline-style ```json ... ``` ─────────────────────────
         for match in re.finditer(r"```json\s*(\{.*?\}|\[.*?\])\s*```", content, re.DOTALL):
             try:
                 obj = json.loads(match.group(1))
@@ -158,6 +174,54 @@ class Agent(abc.ABC):
                 args = item.get("arguments") or item.get("args") or item.get("input") or {}
                 if name:
                     calls.append(ToolCall(name=name, arguments=args))
+
+        # Если уже нашли Cline-блок — обычно этого достаточно. Но бывают
+        # модели, которые мешают форматы; пройдёмся и по <tool_call>, чтобы
+        # не терять вызовы, если первый парсер дал пусто.
+        if calls:
+            return calls
+
+        # ── 2) <tool_call>...</tool_call> (Hermes / OpenAI xml) ──────
+        for match in re.finditer(
+            r"<tool_call>\s*(\{.*?\})\s*</tool_call>", content, re.DOTALL
+        ):
+            try:
+                obj = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            name = obj.get("name") or obj.get("tool")
+            # Hermes любит вложенный {"arguments": "{...json string...}"}
+            args = obj.get("arguments")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {"raw": args}
+            elif not isinstance(args, dict):
+                args = obj.get("args") or obj.get("input") or {}
+            if name:
+                calls.append(ToolCall(name=name, arguments=args or {}))
+
+        if calls:
+            return calls
+
+        # ── 3) Крайний случай: одиночный JSON-объект с name/tool ──
+        # Не матчим "любой JSON", иначе проглотим тело ответа.
+        # Ограничиваемся одним объектом, в котором есть name/tool.
+        stripped = content.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                obj = json.loads(stripped)
+            except json.JSONDecodeError:
+                obj = None
+            if isinstance(obj, dict):
+                name = obj.get("name") or obj.get("tool")
+                args = obj.get("arguments") or obj.get("args") or obj.get("input") or {}
+                if name:
+                    calls.append(ToolCall(name=name, arguments=args or {}))
+
         return calls
 
     async def _run_tools(
@@ -165,12 +229,26 @@ class Agent(abc.ABC):
         ctx: AgentContext,
         tool_calls: List[ToolCall],
     ) -> List[ToolResult]:
-        """Выполняет tool-calls и эмитит события."""
+        """
+        Выполняет tool-calls и эмитит события.
+
+        Дополнительно накапливает результаты в ctx.tool_outcomes — это
+        «боковая» лента для Executor-а, чтобы он мог сформировать
+        финальный отчёт на основе реальных tool-результатов.
+        """
         results: List[ToolResult] = []
         for call in tool_calls:
             self._emit(ctx, ProgressEvent(kind="tool_call", agent=self.name, tool=call))
             result = await self.tools.execute(call, workspace=ctx.tools.workspace)
             self._emit(ctx, ProgressEvent(kind="tool_result", agent=self.name, result=result))
+            # Накапливаем для post-processing (Executor → отчёт)
+            try:
+                ctx.tool_outcomes.append(result)
+            except AttributeError:
+                # Если ctx был создан из чужой версии AgentContext (без
+                # поля tool_outcomes) — не валим выполнение, просто не
+                # копим. Свежие ctx-ы это поле имеют.
+                pass
             results.append(result)
         return results
 

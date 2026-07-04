@@ -1,25 +1,40 @@
 """
 tools/file_tool.py
 ──────────────────
-Три файловых инструмента (Cline-подобные):
+Четыре файловых инструмента (Cline-подобные):
 
   • read_file     — прочитать содержимое
   • write_file    — создать/перезаписать
+  • delete_file   — удалить файл (защищён от сноса директорий)
+  • search_in_file — grep с sandbox-проверкой (файл или директория)
   • list_dir      — посмотреть директорию
 
-Все они работают ТОЛЬКО в пределах workspace_dir
-(любой выход за его пределы → PermissionError).
+Все они работают ТОЛЬКО в пределах workspace_dir.
+Любой выход за его пределы → SecurityError (наследник PermissionError,
+импортируется из tools/exceptions.py и re-export-ится здесь для удобства).
 """
 
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
 from tools.base import Tool
+from tools.exceptions import SecurityError
 
 PathLike = Union[str, os.PathLike]
+
+__all__ = [
+    "SecurityError",
+    "_safe_resolve",
+    "ReadFile",
+    "WriteFile",
+    "DeleteFile",
+    "SearchInFile",
+    "ListDir",
+]
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -51,9 +66,10 @@ def _safe_resolve(workspace: PathLike, user_path: PathLike) -> Path:
     try:
         resolved = candidate.resolve(strict=False)
     except OSError as e:
-        # Битый путь (например, слишком длинный) — это не Permission, это
-        # нормальная ошибка, которую LLM должна увидеть.
-        raise PermissionError(f"Cannot resolve path {user_path_str!r}: {e}") from e
+        # Битый путь (например, слишком длинный) — это не Security, это
+        # нормальная ошибка, которую LLM должна увидеть. Поднимаем как
+        # SecurityError всё равно, чтобы реестр ловил единообразно.
+        raise SecurityError(f"Cannot resolve path {user_path_str!r}: {e}") from e
 
     workspace_root = Path(workspace).resolve()
     # Корректная проверка «внутри»: добавляем os.sep, чтобы /workspace-evil
@@ -61,7 +77,7 @@ def _safe_resolve(workspace: PathLike, user_path: PathLike) -> Path:
     try:
         resolved.relative_to(workspace_root)
     except ValueError as e:
-        raise PermissionError(
+        raise SecurityError(
             f"Path {user_path_str!r} resolves outside workspace "
             f"'{workspace_root}'. Refusing to operate."
         ) from e
@@ -259,3 +275,222 @@ class ListDir(Tool):
             return f"[ERROR] list_dir failed for {path}: {e}"
 
         return "\n".join(entries) if entries else "(empty directory)"
+
+
+# ───────────────────────────────────────────────────────────────────
+# Delete
+# ───────────────────────────────────────────────────────────────────
+class DeleteFile(Tool):
+    """
+    Удаляет один файл. Удалять директории запрещено на уровне этого tool-а —
+    иначе LLM одной командой снесёт пол-проекта. Для работы с директориями
+    есть list_dir (read-only) и будущий tree-remove.
+    """
+
+    name = "delete_file"
+    description = (
+        "Delete a single file inside the workspace. Refuses to delete "
+        "directories (use a dedicated tool for that). Path is sandboxed."
+    )
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to delete (relative to workspace or absolute).",
+            },
+        },
+        "required": ["path"],
+    }
+
+    def __init__(self, workspace: str = "."):
+        self.workspace = workspace
+
+    async def execute(self, arguments: Dict[str, Any]) -> str:
+        path_arg = arguments.get("path")
+        if not path_arg:
+            return "[ERROR] 'path' argument is required for delete_file."
+
+        # 1) Sandbox-резолв. SecurityError → [BLOCKED] в LLM-виде.
+        try:
+            path = _safe_resolve(self.workspace, path_arg)
+        except SecurityError as e:
+            return f"[BLOCKED] {e}"
+
+        # 2) Проверка существования.
+        if not path.exists():
+            return f"[ERROR] File not found: {path}"
+
+        # 3) Не даём LLM случайно снести директорию через delete_file.
+        if path.is_dir() or path.is_symlink() and path.is_dir():
+            return (
+                f"[ERROR] {path} is a directory; delete_file only removes files. "
+                "Use a directory-management tool if you really need to remove a tree."
+            )
+
+        # 4) Удаление.
+        try:
+            path.unlink()
+        except PermissionError as e:
+            return f"[BLOCKED] OS-level delete denied for {path}: {e}"
+        except OSError as e:
+            return f"[ERROR] Delete failed for {path}: {e}"
+
+        return f"[OK] Deleted {path}"
+
+
+# ───────────────────────────────────────────────────────────────────
+# Search (grep с sandbox)
+# ───────────────────────────────────────────────────────────────────
+class SearchInFile(Tool):
+    """
+    Ищет regex в одном файле или рекурсивно в директории.
+
+    Ограничения:
+      • По умолчанию — 100 матчей, hard cap — 1000 (чтобы LLM не утонула).
+      • На рекурсивном обходе — КАЖДЫЙ найденный файл снова прогоняется
+        через _safe_resolve (защита от symlink-ловушек, ведущих наружу).
+      • Бинарные файлы пропускаются (heuristic: NUL-байт в первых 8 KiB).
+    """
+
+    name = "search_in_file"
+    description = (
+        "Search a regex pattern in a file or recursively in a directory. "
+        "Returns matches as 'line_no: line'. Truncated to max_results."
+    )
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "File or directory to search in (relative to workspace or absolute).",
+            },
+            "pattern": {
+                "type": "string",
+                "description": "Regular expression (Python re syntax).",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of matches to return (default 100, hard cap 1000).",
+                "default": 100,
+                "minimum": 1,
+                "maximum": 1000,
+            },
+        },
+        "required": ["path", "pattern"],
+    }
+
+    DEFAULT_MAX = 100
+    HARD_MAX = 1000
+    BINARY_SNIFF_BYTES = 8 * 1024
+
+    def __init__(self, workspace: str = "."):
+        self.workspace = workspace
+
+    # ── helpers ─────────────────────────────────────────────────
+    @staticmethod
+    def _is_probably_binary(path: Path) -> bool:
+        """Эвристика: NUL в первых 8 KiB ⇒ бинарь, не лезем в него."""
+        try:
+            with path.open("rb") as fh:
+                chunk = fh.read(SearchInFile.BINARY_SNIFF_BYTES)
+        except OSError:
+            return True  # не прочиталось — на всякий случай пропустим
+        return b"\x00" in chunk
+
+    def _search_file(self, file_path: Path, regex: re.Pattern, results: List[str], max_results: int) -> bool:
+        """
+        Ищет regex в одном файле. Возвращает True, если достигнут лимит
+        (тогда вызывающий должен прервать обход).
+        """
+        if self._is_probably_binary(file_path):
+            return False
+        try:
+            with file_path.open("r", encoding="utf-8", errors="replace") as fh:
+                for line_no, line in enumerate(fh, start=1):
+                    if regex.search(line):
+                        # Чистим line от трейлинг-нулей, чтобы не рвать вывод
+                        results.append(f"{file_path}:{line_no}: {line.rstrip()}")
+                        if len(results) >= max_results:
+                            return True
+        except OSError:
+            return False
+        return False
+
+    def _search_directory(
+        self,
+        dir_path: Path,
+        regex: re.Pattern,
+        results: List[str],
+        max_results: int,
+    ) -> None:
+        """
+        Рекурсивный обход с sandbox-проверкой на каждом файле.
+        """
+        # sorted() даёт детерминированный порядок (важно для тестов)
+        for root, dirs, files in os.walk(dir_path):
+            # Не уходим в скрытые каталоги (.git, .venv, __pycache__)
+            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            for name in sorted(files):
+                if name.startswith("."):
+                    continue
+                file_path = Path(root) / name
+                # Доп. sandbox-проверка: файл мог оказаться ПОЗАДИ
+                # symlink-а, уводящего из workspace.
+                try:
+                    safe = _safe_resolve(self.workspace, file_path)
+                except SecurityError:
+                    continue
+                if self._search_file(safe, regex, results, max_results):
+                    return  # лимит
+
+    # ── public ──────────────────────────────────────────────────
+    async def execute(self, arguments: Dict[str, Any]) -> str:
+        path_arg = arguments.get("path")
+        pattern = arguments.get("pattern")
+        if not path_arg:
+            return "[ERROR] 'path' argument is required for search_in_file."
+        if not pattern or not isinstance(pattern, str):
+            return "[ERROR] 'pattern' argument is required and must be a string."
+
+        # max_results
+        try:
+            max_results = int(arguments.get("max_results", self.DEFAULT_MAX))
+        except (TypeError, ValueError):
+            return "[ERROR] 'max_results' must be an integer."
+        if max_results < 1:
+            return "[ERROR] 'max_results' must be >= 1."
+        max_results = min(max_results, self.HARD_MAX)
+
+        # regex
+        try:
+            regex = re.compile(pattern)
+        except re.error as e:
+            return f"[ERROR] Invalid regex {pattern!r}: {e}"
+
+        # sandbox
+        try:
+            path = _safe_resolve(self.workspace, path_arg)
+        except SecurityError as e:
+            return f"[BLOCKED] {e}"
+
+        if not path.exists():
+            return f"[ERROR] Path not found: {path}"
+
+        # go
+        results: List[str] = []
+        try:
+            if path.is_file():
+                self._search_file(path, regex, results, max_results)
+            elif path.is_dir():
+                self._search_directory(path, regex, results, max_results)
+            else:
+                return f"[ERROR] Not a regular file or directory: {path}"
+        except Exception as e:  # noqa: BLE001
+            return f"[ERROR] Search failed for {path}: {e}"
+
+        if not results:
+            return f"(no matches for {pattern!r} under {path})"
+        if len(results) >= max_results:
+            results.append(f"... truncated at {max_results} matches ...")
+        return "\n".join(results)

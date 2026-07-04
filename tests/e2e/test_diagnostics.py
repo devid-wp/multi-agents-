@@ -18,20 +18,24 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, Generator, List
 
 import httpx
 import pytest
 
+from agents.base import AgentContext
+from agents.executor import ExecutorAgent
 from core.diagnostics import diagnostics_bus
-from core.models import AgentName, ProgressEvent, ToolCall
+from core.models import AgentName, ChatMessage, ProgressEvent, Role, ToolCall
+from tools.registry import ToolRegistry
 
 
 # ───────────────────────────────────────────────────────────────────
 # Утилита: чистим singleton-буфер между тестами.
 # ───────────────────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)
-def _reset_diagnostics_bus() -> None:
+def _reset_diagnostics_bus() -> Generator[None, None, None]:
     """
     Сбрасывает состояние глобальной шины перед каждым тестом.
 
@@ -103,6 +107,81 @@ async def test_history_limit_validation(app_client: httpx.AsyncClient) -> None:
     assert r0.status_code == 422
     r1000 = await app_client.get("/api/diagnostics/history", params={"limit": 1000})
     assert r1000.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_executor_agent_write_file_emits_tool_execution(
+    temp_workspace: Path,
+) -> None:
+    """ExecutorAgent вручную делает write_file и публикует tool_execution."""
+    history_before = diagnostics_bus.history(limit=100)
+
+    registry = ToolRegistry(workspace=str(temp_workspace))
+    executor = ExecutorAgent(tools=registry)
+
+    responses = [
+        ChatMessage(
+            role=Role.ASSISTANT,
+            content='{"name":"write_file","arguments":{"path":"test.txt","content":"hello"}}',
+        ),
+        ChatMessage(role=Role.ASSISTANT, content="OK"),
+        ChatMessage(role=Role.ASSISTANT, content="Файл test.txt создан."),
+    ]
+
+    async def fake_call_llm(messages: list[ChatMessage], **kwargs: object) -> ChatMessage:
+        return responses.pop(0)
+
+    executor._call_llm = fake_call_llm  # type: ignore[assignment]
+
+    ctx = AgentContext(
+        task="create file test.txt with content hello",
+        tools=registry,
+        emit=lambda _: None,
+    )
+
+    result = await executor.run(ctx)
+
+    assert (temp_workspace / "test.txt").read_text(encoding="utf-8") == "hello"
+    assert "test.txt" in result.content
+
+    history_after = diagnostics_bus.history(limit=100)
+    tool_execution_events = [ev for ev in history_after if ev.get("kind") == "tool_execution"]
+    assert any(ev.get("tool") == "write_file" for ev in tool_execution_events), tool_execution_events
+
+
+@pytest.mark.asyncio
+async def test_executor_agent_blocked_write_file_publishes_tool_execution(
+    temp_workspace: Path,
+) -> None:
+    """ExecutorAgent пытается писать /etc/passwd — в шине появляется tool_execution."""
+    registry = ToolRegistry(workspace=str(temp_workspace))
+    executor = ExecutorAgent(tools=registry)
+
+    responses = [
+        ChatMessage(
+            role=Role.ASSISTANT,
+            content='{"name":"write_file","arguments":{"path":"/etc/passwd","content":"bad"}}',
+        ),
+        ChatMessage(role=Role.ASSISTANT, content="OK"),
+        ChatMessage(role=Role.ASSISTANT, content="Попытка заблокирована."),
+    ]
+
+    async def fake_call_llm(messages: list[ChatMessage], **kwargs: object) -> ChatMessage:
+        return responses.pop(0)
+
+    executor._call_llm = fake_call_llm  # type: ignore[assignment]
+
+    ctx = AgentContext(
+        task="delete file /etc/passwd",
+        tools=registry,
+        emit=lambda _: None,
+    )
+
+    result = await executor.run(ctx)
+
+    assert "[BLOCKED]" in result.content or "заблокирован" in result.content
+    history = diagnostics_bus.history(limit=100)
+    assert any(ev.get("kind") == "tool_execution" and ev.get("tool") == "write_file" for ev in history), history
 
 
 # ───────────────────────────────────────────────────────────────────

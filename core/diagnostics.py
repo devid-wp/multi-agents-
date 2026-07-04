@@ -24,7 +24,8 @@ import asyncio
 import collections
 import json
 import logging
-from typing import Any, Deque, Dict, List, Set
+import time
+from typing import Any, Deque, Dict, List, Optional, Set
 
 from core.models import ProgressEvent
 
@@ -34,7 +35,13 @@ log = logging.getLogger("trinity.diagnostics")
 # Какие события пропускаем в шину. Остальные (agent_start, agent_done,
 # agent_message, final, info) остаются только в /api/chat стриме.
 # ───────────────────────────────────────────────────────────────────
-DIAGNOSTIC_KINDS: frozenset[str] = frozenset({"tool_call", "tool_result", "error"})
+#   • tool_call / tool_result / error — это ProgressEvent, идущие через publish(ev).
+#   • tool_execution — отдельный канал для низкоуровневого tool_execute()
+#     из tools/registry.py; попадает в Live Log Stream сразу при старте
+#     tool-а, до того как мы знаем результат.
+DIAGNOSTIC_KINDS: frozenset[str] = frozenset({
+    "tool_call", "tool_result", "error", "tool_execution",
+})
 
 # Размер очереди на одного подписчика. Если клиент не успевает
 # вычитывать — дропаем самые старые события (best-effort).
@@ -88,6 +95,67 @@ class DiagnosticsBus:
             except asyncio.QueueFull:
                 # Медленный клиент — дропаем самый старый элемент
                 # и пробуем ещё раз. Если и это не вышло — пропускаем.
+                try:
+                    q.get_nowait()
+                    q.put_nowait(payload)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    pass
+
+    # ── низкоуровневый канал tool_execution ─────────────────────
+    def publish_tool_execution(
+        self,
+        *,
+        tool: str,
+        args: Dict[str, Any],
+        call_id: str,
+        agent: Optional[str] = None,
+    ) -> None:
+        """
+        Публикует факт ВЫЗОВА tool-а (на входе в ToolRegistry.execute).
+
+        Зачем отдельный метод, а не ProgressEvent:
+          • tool_call (ProgressEvent) публикуется ПОСЛЕ успешного парсинга
+            LLM-ответа и ПЕРЕД invoke. tool_execution — это маркер
+            «мы реально полезли в код инструмента», включая заблокированные
+            sandbox-ом вызовы, которые иначе потерялись бы.
+          • payload-формат отдельный: kind='tool_execution', tool, args,
+            call_id, agent, timestamp. Подходит и для Live Log Stream,
+            и для последующего аудита («какие пути LLM пыталась открыть»).
+
+        Гарантии:
+          • Без блокировок — вызывается из async-цикла Agent.run() в event-loop.
+          • Исключения внутри сериализации или fan-out ГЛОТАЕМ: сломанная
+            шина не должна валить выполнение tool-а.
+          • Дубликаты в SSE-стриме невозможны: подписчики /api/diagnostics
+            читают И tool_call, И tool_execution. UI решает, что рисовать.
+        """
+        try:
+            payload = json.dumps(
+                {
+                    "kind": "tool_execution",
+                    "tool": tool,
+                    "args": args or {},
+                    "call_id": call_id,
+                    "agent": agent,
+                    "timestamp": time.time(),
+                },
+                ensure_ascii=False,
+                default=str,  # Path, set и т.п. → str, иначе TypeError
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("diagnostics_bus.publish_tool_execution: serialise failed: %s", e)
+            return
+
+        # Ring buffer (тот же deque, что и для ProgressEvent)
+        self._buffer.append(payload)
+
+        # Fan-out (тот же код, что и в publish(), но копипастить — опасно
+        # рассинхронизировать. Если subscribe() в будущем изменится —
+        # обновлять оба места.)
+        for q in list(self._subs):
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
                 try:
                     q.get_nowait()
                     q.put_nowait(payload)
