@@ -41,6 +41,7 @@ from agents.base import AgentContext
 from agents.critic import CriticAgent
 from agents.executor import ExecutorAgent
 from agents.planner import PlannerAgent
+from core.diagnostics import diagnostics_bus
 
 log = logging.getLogger("trinity.manager")
 
@@ -196,6 +197,14 @@ class AgentManager:
                     event_q.put_nowait(ev)
                 except Exception as e:  # noqa: BLE001
                     log.warning("emit() failed: %s", e)
+                # Глобальный канал диагностики (Live Diagnostics UI).
+                # Публикуем ТОЛЬКО tool_call/tool_result/error — остальные
+                # события остаются в /api/chat стриме.
+                try:
+                    if ev.kind in {"tool_call", "tool_result", "error"}:
+                        diagnostics_bus.publish(ev)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("diagnostics_bus.publish() failed: %s", e)
 
             ctx_factory = lambda task, history=None: AgentContext(  # noqa: E731
                 task=task or "",

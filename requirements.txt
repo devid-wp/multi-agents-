@@ -42,3 +42,21 @@ python-dotenv==1.0.1
 # ─────────────────────────────────────────────────────────────────
 uvloop==0.21.0; sys_platform == "linux"
 httptools==0.6.4; sys_platform == "linux"
+
+# File system watcher for the Mission Control UI's workspace tree.
+# Used by /api/workspace/stream in main.py (see core/diagnostics.py).
+# 1.x is the modern line (added in 2024) and ships pre-built wheels
+# for Python 3.12+ on Windows/Linux/macOS. 0.24.0 is the last 0.x
+# release; both expose the same `awatch` + `Change` enum API.
+watchfiles>=1.0,<2.0
+
+# ─────────────────────────────────────────────────────────────────
+# Dev / E2E tests (soft-deps, ставятся отдельно)
+#   • pytest-asyncio — async-тесты для SSE-стримов (/api/chat,
+#     /api/diagnostics/stream, /api/workspace/stream).
+#   • respx          — декларативный мок httpx: подменяет исходящие
+#     запросы к NVIDIA NIM и Ollama, чтобы E2E-тесты не зависели
+#     от реальных LLM-провайдеров.
+# ─────────────────────────────────────────────────────────────────
+pytest-asyncio>=0.24,<1.0
+respx>=0.21,<1.0

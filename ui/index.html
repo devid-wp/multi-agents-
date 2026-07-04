@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trinity — Mission Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/ui/static/styles.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    /* Tailwind config: mirror CSS variables so utilities like
+       bg-bg-2, text-fg-dim, border-border, text-info, text-ok, etc. resolve. */
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bg:       'var(--bg)',
+            'bg-1':   'var(--bg-1)',
+            'bg-2':   'var(--bg-2)',
+            'bg-3':   'var(--bg-3)',
+            fg:       'var(--fg)',
+            'fg-dim': 'var(--fg-dim)',
+            'fg-muted': 'var(--fg-muted)',
+            border:   'var(--border)',
+            accent:   'var(--accent)',
+            'accent-2': 'var(--accent-2)',
+            ok:       'var(--ok)',
+            info:     'var(--info)',
+            critic:   'var(--critic)',
+            executor: 'var(--executor)',
+            error:    'var(--error)',
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body>
+  <!--
+    Grid layout (3 columns × 3 rows):
+      [topbar   |  topbar   | topbar   ]   (44px)
+      [workspace|  bridge   | diagnostics]  (1fr)
+      [workspace| composer  | diagnostics]  (180px)
+  -->
+  <div id="app" class="app-shell">
+    <header id="topbar">
+      <button id="btn-sidebar-toggle" class="icon-btn" title="Toggle workspace panel">☰</button>
+      <span class="logo">⬢ Trinity</span>
+      <div class="agent-toolbar">
+        <button type="button" class="agent-btn active status-ready" data-agent="planner">
+          <span class="status-dot"></span>Planner
+        </button>
+        <button type="button" class="agent-btn status-ready" data-agent="critic">
+          <span class="status-dot"></span>Critic
+        </button>
+        <button type="button" class="agent-btn status-ready" data-agent="executor">
+          <span class="status-dot"></span>Executor
+        </button>
+      </div>
+    </header>
+
+    <main id="main-panel">
+      <div id="chat-container" class="chat-container log-panel bg-[#0f0f0f] text-[#ececec]">
+        <div class="log-header">Live Log Stream</div>
+      </div>
+      <div class="hero-panel">
+        <div class="hero-title">Trinity is ready.</div>
+        <div class="hero-subtitle">A clean workspace for your next agent task.</div>
+      </div>
+    </main>
+
+    <div id="composer-panel" class="composer-panel">
+      <form id="chat-form" class="composer-form" autocomplete="off">
+        <div class="composer-input-wrapper">
+          <textarea id="chat-input"
+                    rows="1"
+                    placeholder="Ask Trinity…"
+                    class="composer-input"></textarea>
+          <button id="send-btn" type="submit" class="send-icon" aria-label="Send message">➜</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <aside id="col-workspace" class="glass-panel sidebar-panel closed">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Workspace</span>
+      <button id="btn-refresh-tree" class="icon-btn" title="Refresh tree">↻</button>
+    </div>
+    <div id="workspace-tree" class="tree text-fg"></div>
+    <div id="workspace-status" class="text-xs muted mt-2">idle</div>
+  </aside>
+
+  <aside id="col-diagnostics" class="glass-panel diag-panel">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Diagnostics</span>
+    </div>
+    <div id="diagnostics-list" class="diag-list">
+      <div class="diag-note">Diagnostics stream is ready.</div>
+    </div>
+  </aside>
+
+  <!-- ── Settings modal ─────────────────────────────────────── -->
+  <div id="settings-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h2>⚙ Settings</h2>
+      <form id="settings-form">
+        <div class="upper muted mt-2">Planner (NVIDIA)</div>
+        <label>API key</label>
+        <input name="planner_api_key" type="password" placeholder="nvapi-…">
+        <div class="row">
+          <div>
+            <label>Base URL</label>
+            <input name="planner_base_url" type="text" placeholder="https://integrate.api.nvidia.com/v1">
+          </div>
+          <div>
+            <label>Model URL (optional)</label>
+            <input name="planner_model_url" type="text" placeholder="leave empty for default">
+          </div>
+        </div>
+        <label>Planner model</label>
+        <input name="planner_model" type="text" placeholder="abacusai/dracarys-llama-3.1-70b-instruct">
+
+        <div class="upper muted mt-3">Critic (NVIDIA)</div>
+        <label>API key</label>
+        <input name="critic_api_key" type="password" placeholder="nvapi-…">
+        <div class="row">
+          <div>
+            <label>Base URL</label>
+            <input name="critic_base_url" type="text" placeholder="https://integrate.api.nvidia.com/v1">
+          </div>
+          <div>
+            <label>Model URL (optional)</label>
+            <input name="critic_model_url" type="text" placeholder="leave empty for default">
+          </div>
+        </div>
+        <label>Critic model</label>
+        <input name="critic_model" type="text" placeholder="google/gemma-2-27b-it">
+
+        <div class="upper muted mt-3">Executor (Ollama)</div>
+        <label>Ollama URL</label>
+        <input name="ollama_url" type="text" placeholder="http://localhost:11434">
+        <label>Executor model</label>
+        <input name="executor_model" type="text" placeholder="qwen2.5-coder">
+
+        <div id="settings-status" class="text-xs mt-3"></div>
+        <div class="actions">
+          <button type="button" data-close>Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/ui/static/app.js" type="module"></script>
+</body>
+</html>
