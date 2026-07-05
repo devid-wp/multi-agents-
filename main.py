@@ -388,6 +388,7 @@ SSE_HEADERS = {
 
 @app.get("/api/diagnostics/stream")
 async def diagnostics_stream(request: Request):
+    print(f"DEBUG_SERVER: diagnostics_bus id = {id(diagnostics_bus)}")
     """
     Persistent SSE: фанит-аутит tool_call/tool_result/error от шины.
 
@@ -399,13 +400,11 @@ async def diagnostics_stream(request: Request):
     queue = await diagnostics_bus.subscribe()
 
     async def gen() -> AsyncGenerator[str, None]:
+        disconnect_task = asyncio.create_task(request.is_disconnected())
         try:
             yield ": ready\n\n"
             ping_at = asyncio.get_event_loop().time() + 15.0
-            while True:
-                # Если клиент закрыл соединение — выходим
-                if await request.is_disconnected():
-                    return
+            while not disconnect_task.done():
                 # Ждём либо нового события, либо таймаута для ping
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=1.0)
@@ -420,6 +419,7 @@ async def diagnostics_stream(request: Request):
         except asyncio.CancelledError:
             return
         finally:
+            disconnect_task.cancel()
             diagnostics_bus.unsubscribe(queue)
 
     return StreamingResponse(
@@ -584,10 +584,11 @@ async def workspace_stream(request: Request):
         return False
 
     async def gen() -> AsyncGenerator[str, None]:
+        disconnect_task = asyncio.create_task(request.is_disconnected())
         yield ": ready\n\n"
         try:
             async for changes in awatch(workspace, step=200, recursive=True):
-                if await request.is_disconnected():
+                if disconnect_task.done():
                     return
                 for change_type, abs_path in changes:
                     p = Path(abs_path)
@@ -595,7 +596,8 @@ async def workspace_stream(request: Request):
                         continue
                     try:
                         rel = str(p.relative_to(workspace))
-                    except ValueError:
+                    except Exception as e:
+                        log.warning("workspace watcher gen error: %s", e)
                         continue
                     if rel.startswith("."):
                         continue
@@ -607,6 +609,8 @@ async def workspace_stream(request: Request):
                     yield f"data: {json.dumps({'type': kind, 'path': rel})}\n\n"
         except asyncio.CancelledError:
             return
+        finally:
+            disconnect_task.cancel()
 
     return StreamingResponse(
         gen(),

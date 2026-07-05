@@ -44,7 +44,7 @@ body {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 13px;
   line-height: 1.55;
-  background: #0f0f0f;
+  background: #05070a;
   color: #f4f4f4;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -769,8 +769,8 @@ header#topbar {
 /* Settings modal */
 .modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.65);
-  backdrop-filter: blur(3px);
+  background: rgba(3, 4, 7, 0.75);
+  backdrop-filter: blur(8px);
   display: flex; align-items: center; justify-content: center;
   z-index: 50;
   animation: fadeIn 0.12s ease;
@@ -778,14 +778,14 @@ header#topbar {
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .settings-modal-card {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  background: rgba(13, 16, 23, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
   padding: 0;
   width: min(560px, 94vw);
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
   animation: slideUp 0.15s ease;
 }
 @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -800,19 +800,23 @@ header#topbar {
   max-height: 88vh;
   overflow-y: auto;
 }
-.modal h2 { margin: 0 0 12px; font-size: 16px; }
-.modal label { display: block; margin: 8px 0 2px; font-size: 12px; color: var(--fg-dim); }
+.modal h2 { margin: 0 0 12px; font-size: 16px; color: #ffffff; }
+.modal label { display: block; margin: 8px 0 2px; font-size: 12px; color: #ffffff; }
 .modal input {
   width: 100%; box-sizing: border-box;
   padding: 6px 8px;
-  background: var(--bg-2);
+  background: #080a0f;
   color: var(--fg);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 3px;
   font-family: ui-monospace, monospace;
   font-size: 12.5px;
 }
-.modal input:focus { outline: none; border-color: var(--accent); }
+.modal input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(143, 212, 183, 0.25);
+}
 .modal .row { display: flex; gap: 12px; }
 .modal .row > * { flex: 1; }
 .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
@@ -836,6 +840,7 @@ header#topbar {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.01em;
+  color: #ffffff;
 }
 .modal-close-btn {
   background: none;
@@ -863,34 +868,36 @@ header#topbar {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--fg-dim);
+  color: #52607a;
 }
 
 /* Provider tabs */
 .provider-tabs {
   display: flex;
-  gap: 4px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
+  gap: 6px;
+  background: #080a0f;
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 6px;
   padding: 3px;
 }
 .provider-tab {
   flex: 1;
-  background: none;
-  border: none;
+  background: rgba(20, 26, 38, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.03);
   border-radius: 4px;
   color: var(--fg-dim);
   cursor: pointer;
   font-size: 12px;
   padding: 5px 8px;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
 }
-.provider-tab:hover { color: var(--fg); }
+.provider-tab:hover { color: var(--fg); background: rgba(30, 38, 54, 0.7); }
 .provider-tab.active {
   background: var(--accent);
-  color: #fff;
+  color: #0d1017;
+  border-color: var(--accent);
   font-weight: 600;
+  box-shadow: 0 0 10px rgba(143, 212, 183, 0.4);
 }
 
 /* Provider panel */
@@ -908,26 +915,29 @@ header#topbar {
   align-items: baseline;
   gap: 6px;
   font-size: 11.5px;
-  color: var(--fg-dim);
+  color: #ffffff;
   margin: 0;
 }
 .field-hint {
   font-size: 10px;
-  color: var(--fg-dim);
-  opacity: 0.65;
+  color: #52607a;
 }
 .settings-field input {
   width: 100%; box-sizing: border-box;
   padding: 7px 10px;
-  background: var(--bg-2);
+  background: #080a0f;
   color: var(--fg);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 5px;
   font-family: ui-monospace, monospace;
   font-size: 12.5px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.settings-field input:focus { outline: none; border-color: var(--accent); }
+.settings-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(143, 212, 183, 0.25);
+}
 
 /* Settings row */
 .settings-row { display: flex; gap: 10px; }

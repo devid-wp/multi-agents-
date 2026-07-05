@@ -209,6 +209,7 @@ async def _read_sse_events(
 
     async with asyncio.timeout(timeout):
         async for line in _iter():
+            print(f"DEBUG_CLIENT_READ: {line!r}")
             if not line.startswith("data:"):
                 continue
             payload = line[len("data:"):].strip()
@@ -237,6 +238,7 @@ async def test_stream_subscribes_and_emits_published_event(
         tool=ToolCall(name="list_dir", arguments={"path": "."}),
     )
 
+    print(f"DEBUG_TEST: diagnostics_bus id = {id(diagnostics_bus)}")
     async with app_client.stream("GET", "/api/diagnostics/stream") as resp:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
