@@ -20,6 +20,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -298,12 +299,54 @@ class TestDiagnosticsEmission:
         result = await reg.execute(ToolCall(name="no_such_tool", arguments={}))
 
         assert not result.success
+
+
+class TestLLMAndToolValidation:
+    @pytest.mark.asyncio
+    async def test_executor_uses_injected_llm_client_interface(self) -> None:
+        from agents.executor import ExecutorAgent
+        from core.llm_clients import BaseLLMClient
+        from core.models import ChatMessage, Role
+
+        class DummyClient(BaseLLMClient):
+            async def chat(
+                self,
+                *,
+                model: str,
+                messages: List[ChatMessage],
+                temperature: float = 0.6,
+                max_tokens: int = 2048,
+                tools: Optional[List[Dict[str, Any]]] = None,
+                agent: Optional[Any] = None,
+            ) -> ChatMessage:
+                return ChatMessage(role=Role.ASSISTANT, content="ok")
+
+        executor = ExecutorAgent(llm_client=DummyClient())
+        msg = await executor._call_llm(messages=[ChatMessage(role=Role.USER, content="hi")])
+
+        assert msg.content == "ok"
+
+    @pytest.mark.asyncio
+    async def test_registry_rejects_invalid_tool_arguments(self, temp_workspace: Path) -> None:
+        from core.diagnostics import diagnostics_bus
+        from core.models import ToolCall
+        from tools.registry import ToolRegistry
+
+        history_before = len(diagnostics_bus._buffer)
+        registry = ToolRegistry(workspace=str(temp_workspace))
+        result = await registry.execute(
+            ToolCall(name="write_file", arguments={"path": "demo.txt", "content": 123})
+        )
+
+        assert not result.success
+        assert "ToolValidationError" in result.error
+        assert "content" in result.error.lower()
         history_after = list(diagnostics_bus._buffer)[history_before:]
         tool_events = [
             json.loads(line) for line in history_after
             if '"kind": "tool_execution"' in line
         ]
-        assert any(ev.get("tool") == "no_such_tool" for ev in tool_events), tool_events
+        assert any(ev.get("tool") == "write_file" for ev in tool_events), tool_events
 
     @pytest.mark.asyncio
     async def test_delete_file_registered(self, temp_workspace: Path) -> None:

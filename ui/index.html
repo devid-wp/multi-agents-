@@ -63,11 +63,19 @@
           <span class="status-dot"></span>Executor
         </button>
       </div>
+      <div class="topbar-meta">
+        <div id="tool-status" class="tool-status-pill idle">Tool lifecycle: idle</div>
+        <div id="hardware-link-status" class="hardware-pill offline">Hardware Link · offline</div>
+      </div>
     </header>
 
     <main id="main-panel">
+      <div id="tool-status-panel" class="tool-status-panel">
+        <div class="tool-status-title">Executor state</div>
+        <div id="tool-status-content" class="tool-status-content">Waiting for the next tool action…</div>
+      </div>
       <div id="chat-container" class="chat-container log-panel bg-[#0f0f0f] text-[#ececec]">
-        <div class="log-header">Live Log Stream</div>
+        <div class="log-header">Agent stream</div>
       </div>
     </main>
 
@@ -96,6 +104,14 @@
   <aside id="col-diagnostics" class="glass-panel diag-panel">
     <div class="sidebar-header">
       <span class="sidebar-title">Diagnostics</span>
+      <span id="diagnostics-status" class="status-pill offline">offline</span>
+    </div>
+    <div id="hardware-link-card" class="hardware-card">
+      <div class="hardware-head">
+        <span class="hardware-title">Hardware Link</span>
+        <span id="hardware-link-pill" class="status-pill offline">offline</span>
+      </div>
+      <div id="hardware-link-detail" class="hardware-detail">Awaiting ESP32 connection…</div>
     </div>
     <div id="diagnostics-list" class="diag-list">
       <div class="diag-note">Diagnostics stream is ready.</div>

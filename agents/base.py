@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from core.llm_clients import LLMError, NvidiaClient, OllamaClient
+from core.llm_clients import BaseLLMClient, LLMError, NvidiaClient, OllamaClient
 from core.models import (
     AgentName,
     ChatMessage,
@@ -75,11 +75,13 @@ class Agent(abc.ABC):
         model: Optional[str] = None,
         nvidia: Optional[NvidiaClient] = None,
         ollama: Optional[OllamaClient] = None,
+        llm_client: Optional[BaseLLMClient] = None,
         tools: Optional[ToolRegistry] = None,
     ):
         self.MODEL_NAME = model or self.MODEL_NAME
         self._nvidia = nvidia
         self._ollama = ollama
+        self._llm_client = llm_client
         self.tools = tools or ToolRegistry()
 
     # ── helpers ──────────────────────────────────────────────────────
@@ -114,6 +116,15 @@ class Agent(abc.ABC):
                 )
             tool_schemas = None
 
+        if self._llm_client is not None:
+            return await self._llm_client.chat(
+                model=self.MODEL_NAME,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tool_schemas,
+                agent=self.name,
+            )
         if self.LLM_PROVIDER == "nvidia":
             if not self._nvidia:
                 raise LLMError(f"{self.name}: NVIDIA client not configured")

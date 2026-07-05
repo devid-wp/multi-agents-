@@ -16,18 +16,23 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
+
+from pydantic import BaseModel, ValidationError, create_model
 
 from core.diagnostics import diagnostics_bus
 from core.models import ToolCall, ToolResult
-
 from tools.base import Tool
 from tools.bash_tool import ExecuteBash
 from tools.exceptions import SecurityError
 from tools.file_tool import DeleteFile, ListDir, ReadFile, SearchInFile, WriteFile, _safe_resolve
+from tools.system_tool import GetSystemStatus
 
 log = logging.getLogger("trinity.tools")
+
+
+class ToolValidationError(ValueError):
+    """Raised when the tool arguments do not match the declared schema."""
 
 
 class ToolRegistry:
@@ -38,11 +43,8 @@ class ToolRegistry:
 
     def __init__(self, workspace: str = "."):
         self.workspace = workspace
-        # Имя → инстанс Tool
         self._tools: Dict[str, Tool] = {}
-        # Файлы, которые были созданы/изменены (для UI)
         self.touched_paths: Set[str] = set()
-        # Файлы, которые были прочитаны (для UI/контекста)
         self.read_paths: Set[str] = set()
         self._register_defaults()
 
@@ -55,10 +57,10 @@ class ToolRegistry:
             DeleteFile(workspace=self.workspace),
             SearchInFile(workspace=self.workspace),
             ListDir(workspace=self.workspace),
+            GetSystemStatus(),
         ):
             self.register(tool)
 
-    # ── Публичный API ─────────────────────────────────────────────
     def register(self, tool: Tool) -> None:
         """Регистрирует новый инструмент (или переопределяет существующий)."""
         if not tool.name:
@@ -88,12 +90,56 @@ class ToolRegistry:
             resolved = _safe_resolve(self.workspace, raw)
             path_str = str(resolved)
         except PermissionError:
-            # Не выезжает за песочницу — в UI не показываем, но и не падаем.
             return
         if name in ("write_file",):
             self.touched_paths.add(path_str)
         elif name == "read_file":
             self.read_paths.add(path_str)
+
+    def _build_validator(self, tool: Tool) -> type[BaseModel]:
+        schema = tool.parameters_schema or {}
+        properties = schema.get("properties") or {}
+        required = set(schema.get("required") or [])
+
+        fields: Dict[str, Any] = {}
+        for name, spec in properties.items():
+            field_type: Any = Any
+            if spec.get("type") == "string":
+                field_type = str
+            elif spec.get("type") == "integer":
+                field_type = int
+            elif spec.get("type") == "number":
+                field_type = float
+            elif spec.get("type") == "boolean":
+                field_type = bool
+            elif spec.get("type") == "array":
+                field_type = list
+            elif spec.get("type") == "object":
+                field_type = dict
+            if name in required:
+                fields[name] = (field_type, ...)
+            else:
+                default_value = spec.get("default")
+                if default_value is None and "default" not in spec:
+                    fields[name] = (field_type, None)
+                else:
+                    fields[name] = (field_type, default_value)
+
+        model_name = f"{tool.name.title()}Args"
+        return create_model(model_name, **fields)  # type: ignore[return-value]
+
+    def _validate_arguments(self, tool: Tool, raw_args: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if raw_args is None:
+            raw_args = {}
+        validator = self._build_validator(tool)
+        try:
+            model = validator.model_validate(raw_args)
+        except ValidationError as exc:
+            details = "; ".join(
+                f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors()
+            )
+            raise ToolValidationError(f"ToolValidationError: {tool.name}: {details}") from exc
+        return model.model_dump()
 
     async def execute(self, call: ToolCall, *, workspace: Optional[str] = None) -> ToolResult:
         """
@@ -110,17 +156,14 @@ class ToolRegistry:
              и error, начинающимся с "Permission denied: " (UI фильтрует
              по этому префиксу).
         """
-        # 1) Эмитим «вход» в tool. Делаем ЭТО ДО проверки существования
-        #    tool-а: даже неизвестный tool должен быть виден в логе.
         try:
             diagnostics_bus.publish_tool_execution(
                 tool=call.name,
                 args=call.arguments or {},
                 call_id=call.id,
-                agent=None,  # выставляется на уровне AgentContext, если есть
+                agent=None,
             )
         except Exception as e:  # noqa: BLE001
-            # Сломанная шина не должна валить выполнение tool-а.
             log.warning("diagnostics_bus.publish_tool_execution failed: %s", e)
 
         tool = self._tools.get(call.name)
@@ -138,18 +181,21 @@ class ToolRegistry:
 
         t0 = time.perf_counter()
         try:
-            output = await tool.execute(call.arguments)
+            validated_args = self._validate_arguments(tool, call.arguments)
+            output = await tool.execute(validated_args)
             success = True
             error = None
+        except ToolValidationError as e:
+            output = ""
+            success = False
+            error = str(e)
+            log.warning("Tool validation failed for %s: %s", call.name, e)
         except SecurityError as e:
-            # Sandbox сработал. Поднимаем в лог отдельной строкой — это
-            # инцидент безопасности, должен быть виден.
             output = ""
             success = False
             error = f"Permission denied: {e}"
             log.warning("SecurityError in %s: %s", call.name, e)
         except PermissionError as e:
-            # Любой другой PermissionError (например, OS-уровня).
             output = ""
             success = False
             error = f"Permission denied: {e}"
@@ -160,7 +206,6 @@ class ToolRegistry:
             log.exception("tool %s crashed", call.name)
         dt = int((time.perf_counter() - t0) * 1000)
 
-        # Запоминаем тронутые/прочитанные пути (только при успехе).
         if success and call.name in ("read_file", "write_file"):
             self._track_path(call.name, call.arguments)
 

@@ -19,6 +19,7 @@ NvidiaClient маршрутизирует запросы по AgentName: для 
 
 from __future__ import annotations
 
+import abc
 import json
 import logging
 from dataclasses import dataclass
@@ -34,6 +35,84 @@ log = logging.getLogger("trinity.llm")
 
 class LLMError(RuntimeError):
     """Любая ошибка взаимодействия с LLM-провайдером."""
+
+
+class BaseLLMClient(abc.ABC):
+    """Универсальный интерфейс для LLM-провайдеров."""
+
+    @abc.abstractmethod
+    async def chat(
+        self,
+        *,
+        model: str,
+        messages: List[ChatMessage],
+        temperature: float = 0.6,
+        max_tokens: int = 2048,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        agent: Optional[AgentName] = None,
+    ) -> ChatMessage:
+        raise NotImplementedError
+
+
+class OpenAICompatibleClient(BaseLLMClient):
+    """Базовая реализация для Ollama/vLLM/OpenRouter/OpenAI-совместимых провайдеров."""
+
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        base_url: str = "http://localhost:11434/v1",
+        model: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ) -> None:
+        self.api_key = (api_key or "").strip()
+        self.base_url = base_url.rstrip("/")
+        self.default_model = model or ""
+        self._timeout = timeout or settings.llm_timeout_seconds
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    async def chat(
+        self,
+        *,
+        model: str,
+        messages: List[ChatMessage],
+        temperature: float = 0.6,
+        max_tokens: int = 2048,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        agent: Optional[AgentName] = None,
+    ) -> ChatMessage:
+        payload: Dict[str, Any] = {
+            "model": model or self.default_model,
+            "messages": [m.to_llm_dict() for m in messages],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = tools
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            try:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                )
+            except httpx.HTTPError as exc:
+                raise LLMError(f"OpenAI-compatible request failed: {exc}") from exc
+        if resp.status_code != 200:
+            raise LLMError(f"OpenAI-compatible API {resp.status_code}: {resp.text[:500]}")
+        data = resp.json()
+        choice = data["choices"][0]["message"]
+        return ChatMessage(
+            role=choice.get("role", "assistant"),
+            content=choice.get("content") or "",
+            tool_calls=choice.get("tool_calls"),
+        )
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -164,7 +243,7 @@ NvidiaProviderResolver = Callable[[AgentName], Tuple[Any, ...]]
 # ───────────────────────────────────────────────────────────────────
 # NVIDIA NIM
 # ───────────────────────────────────────────────────────────────────
-class NvidiaClient:
+class NvidiaClient(BaseLLMClient):
     """
     OpenAI-совместимый клиент для NVIDIA NIM с маршрутизацией по AgentName.
     Docs: https://docs.api.nvidia.com/nim/reference/llm-api
@@ -383,7 +462,7 @@ class NvidiaClient:
 # ───────────────────────────────────────────────────────────────────
 # Ollama (локально)
 # ───────────────────────────────────────────────────────────────────
-class OllamaClient:
+class OllamaClient(BaseLLMClient):
     """
     Клиент локального Ollama.
     Docs: https://github.com/ollama/ollama/blob/main/docs/api.md
@@ -408,11 +487,13 @@ class OllamaClient:
 
     async def chat(
         self,
+        *,
         model: str,
         messages: List[ChatMessage],
         temperature: float = 0.3,
         max_tokens: int = 2048,
         tools: Optional[List[Dict[str, Any]]] = None,
+        agent: Optional[AgentName] = None,
     ) -> ChatMessage:
         """Один запрос → один ответ. Для Executor (часто вызывает tools)."""
         payload: Dict[str, Any] = {

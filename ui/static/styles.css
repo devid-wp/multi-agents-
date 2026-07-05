@@ -252,6 +252,127 @@ header#topbar {
   backdrop-filter: blur(18px);
 }
 
+.topbar-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tool-status-pill,
+.hardware-pill,
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: var(--fg-dim);
+}
+
+.tool-status-pill.idle,
+.status-pill.offline,
+.hardware-pill.offline {
+  border-color: rgba(229, 152, 155, 0.26);
+  color: var(--error);
+}
+
+.tool-status-pill.executing,
+.status-pill.live,
+.hardware-pill.online {
+  border-color: rgba(132, 181, 159, 0.32);
+  color: var(--ok);
+}
+
+.tool-status-pill.complete,
+.status-pill.reconnecting {
+  border-color: rgba(143, 212, 183, 0.26);
+  color: var(--accent);
+}
+
+.tool-status-pill.failed {
+  border-color: rgba(229, 152, 155, 0.32);
+  color: var(--error);
+}
+
+.tool-status-panel {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+}
+
+.tool-status-title {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
+}
+
+.tool-status-content {
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.hardware-card {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.hardware-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.hardware-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.hardware-detail {
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.diag-entry {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.diag-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
+}
+
+.diag-body {
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .logo {
   font-size: 0.95rem;
   font-weight: 700;

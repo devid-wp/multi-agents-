@@ -43,9 +43,19 @@
     workspace: { entries: [], root: "" },
     sse: {
       ws: null,
+      diagnostics: null,
     },
     selectedAgent: "planner",
     activeAgent: null,
+    toolState: {
+      current: null,
+      status: "idle",
+      detail: "Waiting for the next tool action…",
+    },
+    hardware: {
+      connected: false,
+      detail: "Awaiting ESP32 connection…",
+    },
   };
 
   // ════════════════════════════════════════════════════════════
@@ -310,13 +320,19 @@
       settingsStat.style.color = "var(--error)";
     }
   }
-console.log("hello world ")
   // ════════════════════════════════════════════════════════════
   // 6. Live log stream and command bridge
   // ════════════════════════════════════════════════════════════
   const chatContainerEl = $("#chat-container");
   const chatInput       = $("#chat-input");
   const sendBtn         = $("#send-btn");
+  const diagnosticsListEl = $("#diagnostics-list");
+  const diagnosticsStatusEl = $("#diagnostics-status");
+  const toolStatusEl = $("#tool-status");
+  const toolStatusContentEl = $("#tool-status-content");
+  const hardwareLinkStatusEl = $("#hardware-link-status");
+  const hardwareLinkPillEl = $("#hardware-link-pill");
+  const hardwareLinkDetailEl = $("#hardware-link-detail");
 
   function setRunningUI(running) {
     state.running = running;
@@ -324,12 +340,54 @@ console.log("hello world ")
     chatInput.disabled = running;
   }
 
+  function updateToolLifecycleState(status, detail, toolName = null) {
+    state.toolState.status = status;
+    state.toolState.detail = detail;
+    state.toolState.current = toolName;
+    const label = toolName ? `Tool lifecycle: ${status} · ${toolName}` : `Tool lifecycle: ${status}`;
+    if (toolStatusEl) {
+      toolStatusEl.textContent = label;
+      toolStatusEl.className = `tool-status-pill ${status}`;
+    }
+    if (toolStatusContentEl) {
+      toolStatusContentEl.textContent = detail;
+    }
+  }
+
+  function updateHardwareLinkState(connected, detail) {
+    state.hardware.connected = connected;
+    state.hardware.detail = detail;
+    const activeClass = connected ? "online" : "offline";
+    [hardwareLinkStatusEl, hardwareLinkPillEl].forEach((el) => {
+      if (!el) return;
+      el.className = `status-pill ${activeClass}`;
+      el.textContent = connected ? "online" : "offline";
+    });
+    if (hardwareLinkDetailEl) {
+      hardwareLinkDetailEl.textContent = detail;
+    }
+  }
+
+  function addDiagnosticEntry(ev) {
+    if (!diagnosticsListEl) return;
+    const row = document.createElement("div");
+    row.className = "diag-entry";
+    const kind = ev.kind || "info";
+    const title = kind === "tool_execution" ? "tool execution" : kind;
+    const message = (ev.content || ev.tool || ev.result || ev.args) ? safeJson(ev) : "—";
+    row.innerHTML = `<div class="diag-title">${escapeHtml(title)}</div><div class="diag-body">${escapeHtml(truncate(message, 300))}</div>`;
+    diagnosticsListEl.prepend(row);
+    while (diagnosticsListEl.children.length > 24) {
+      diagnosticsListEl.removeChild(diagnosticsListEl.lastChild);
+    }
+  }
+
   function renderBridgeEvent(ev) {
     state.bridge.push(ev);
     if (!chatContainerEl) return;
 
     const card = document.createElement("div");
-    card.className = "card chat-card";
+    card.className = `card chat-card ${cardClassForEvent(ev)}`;
     card.innerHTML = bridgeCardHTML(ev);
     chatContainerEl.appendChild(card);
     chatContainerEl.scrollTop = chatContainerEl.scrollHeight;
@@ -345,7 +403,7 @@ console.log("hello world ")
 
   function clearBridge() {
     if (chatContainerEl) {
-      chatContainerEl.innerHTML = "<div class=\"log-header\">Live Log Stream</div>";
+      chatContainerEl.innerHTML = "<div class=\"log-header\">Agent stream</div>";
     }
     state.bridge = [];
   }
@@ -610,13 +668,25 @@ console.log("hello world ")
       ev.timestamp = ev.timestamp || Date.now() / 1000;
       renderBridgeEvent(ev);
 
+      if (ev.kind === "tool_call" && ev.tool) {
+        updateToolLifecycleState("executing", `Calling ${ev.tool.name}`, ev.tool.name);
+        addDiagnosticEntry(ev);
+      }
+      if (ev.kind === "tool_result" && ev.result) {
+        const outcome = ev.result.success ? "complete" : "failed";
+        updateToolLifecycleState(outcome, ev.result.output || ev.result.error || "Tool finished", ev.result.name || null);
+        addDiagnosticEntry(ev);
+      }
+      if (ev.kind === "tool_execution") {
+        addDiagnosticEntry(ev);
+      }
       if (ev.kind === "agent_start" && ev.agent) {
-        updateAgentIndicatorState(ev.agent, "active");
+        updateAgentIndicatorState(ev.agent, "working");
         state.activeAgent = ev.agent;
       }
 
       if (ev.kind === "agent_done" && ev.agent) {
-        updateAgentIndicatorState(ev.agent, null);
+        updateAgentIndicatorState(ev.agent, "ready");
         state.activeAgent = null;
       }
     });
@@ -667,19 +737,6 @@ console.log("hello world ")
     $$(".agent-btn").forEach((btn) => btn.classList.toggle("active", btn.dataset.agent === agent));
   }
 
-  async function switchAgent(agent) {
-    if (!agent) return;
-    state.selectedAgent = agent;
-    setActiveAgentButton(agent);
-    updateAgentIndicatorState(agent, "working");
-
-    setTimeout(() => {
-      if (state.selectedAgent === agent) {
-        updateAgentIndicatorState(agent, "ready");
-      }
-    }, 500);
-  }
-
   // ════════════════════════════════════════════════════
   // 10. boot()
   // ════════════════════════════════════════════════════════════
@@ -728,9 +785,30 @@ console.log("hello world ")
       name: "workspace",
     });
 
-    // Live diagnostics disabled in simplified UI
+    // Diagnostics stream
+    if (state.sse.diagnostics) {
+      state.sse.diagnostics.close();
+    }
+    state.sse.diagnostics = connectSSE("/api/diagnostics/stream", (ev) => {
+      if (!ev || !ev.kind) return;
+      if (ev.kind === "error") {
+        diagnosticsStatusEl.className = "status-pill offline";
+        diagnosticsStatusEl.textContent = "offline";
+      } else {
+        diagnosticsStatusEl.className = "status-pill live";
+        diagnosticsStatusEl.textContent = "live";
+      }
+      addDiagnosticEntry(ev);
+    }, {
+      onStatus: (status) => {
+        diagnosticsStatusEl.className = `status-pill ${status === "open" ? "live" : status === "reconnecting" ? "reconnecting" : "offline"}`;
+        diagnosticsStatusEl.textContent = status === "open" ? "live" : status === "reconnecting" ? "reconnecting" : "offline";
+      },
+      name: "diagnostics",
+    });
 
-    // Topbar status disabled in simplified UI
+    updateHardwareLinkState(false, "Awaiting ESP32 connection…");
+    updateToolLifecycleState("idle", "Waiting for the next tool action…", null);
   }
 
   document.addEventListener("DOMContentLoaded", boot);

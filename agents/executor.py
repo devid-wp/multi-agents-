@@ -72,12 +72,14 @@ class ExecutorAgent(Agent):
         model: Optional[str] = None,
         nvidia=None,
         ollama: Optional[OllamaClient] = None,
+        llm_client: Optional[object] = None,
         tools: Optional[ToolRegistry] = None,
     ):
         super().__init__(
             model=model or self.MODEL_NAME,
             nvidia=nvidia,
             ollama=ollama,
+            llm_client=llm_client,
             tools=tools,
         )
 
