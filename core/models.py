@@ -128,6 +128,10 @@ class SettingsPayload(BaseModel):
     executor_model: Optional[str] = None
     # Legacy single-key support (если прислали — размажем по обоим)
     nvidia_api_key: Optional[str] = None
+    # Global provider override
+    llm_provider: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
 
 
 class SettingsResponse(BaseModel):
@@ -158,6 +162,8 @@ class SettingsResponse(BaseModel):
     executor_model: str
     openai_model: Optional[str] = None
     gemini_model: Optional[str] = None
+    # Global provider (для фронтенда)
+    llm_provider: Optional[str] = None
 
 
 class ChatRequest(BaseModel):
@@ -167,7 +173,7 @@ class ChatRequest(BaseModel):
     # Опционально: пользователь может сразу прислать кредентиалы,
     # не сохраняя их в сессии (для быстрых тестов)
     ephemeral_credentials: Optional[SettingsPayload] = None
-    strategy: Optional[Literal["auto", "planner", "direct"]]
+    strategy: Optional[Literal["auto", "planner", "direct"]] = None
 
 
 # ───────────────────────────────────────────────────────────────────

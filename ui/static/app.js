@@ -263,62 +263,130 @@
   // ════════════════════════════════════════════════════════════
   // 5. Settings modal
   // ════════════════════════════════════════════════════════════
+  const STORAGE_KEY = "trinity_settings";
+
   const modal        = $("#settings-modal");
   const settingsForm = $("#settings-form");
   const settingsStat = $("#settings-status");
 
+  // ── localStorage helpers ────────────────────────────────────────
+  function storageLoad() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    } catch { return {}; }
+  }
+  function storageSave(data) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  }
+
+  // ── Provider tab switching ─────────────────────────────────────
+  const PROVIDER_PANELS = { ollama: "#panel-ollama", nvidia: "#panel-nvidia", custom: "#panel-nvidia" };
+
+  function setActiveProvider(p) {
+    $$("[data-provider]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.provider === p);
+    });
+    // Show/hide panels
+    Object.values(PROVIDER_PANELS).forEach((sel) => {
+      const el = $(sel);
+      if (el) el.classList.add("hidden");
+    });
+    const target = $(PROVIDER_PANELS[p] || "#panel-ollama");
+    if (target) target.classList.remove("hidden");
+    const inp = $("#llm-provider-input");
+    if (inp) inp.value = p;
+  }
+
+  // ── Modal open / close ─────────────────────────────────────────
   function openSettings() {
     modal.classList.remove("hidden");
-    loadSettings();
+    modal.classList.add("modal-enter");
+    requestAnimationFrame(() => modal.classList.remove("modal-enter"));
+    populateForm();
   }
   function closeSettings() {
     modal.classList.add("hidden");
+    if (settingsStat) { settingsStat.textContent = ""; settingsStat.className = "settings-status"; }
   }
-  async function loadSettings() {
-    try {
-      const r = await fetch(ENDPOINTS.settingsGet);
-      if (!r.ok) return;
-      const s = await r.json();
-      const f = settingsForm;
-      // Ключи НЕ приходят; оставляем как есть
-      f.planner_base_url.value  = s.planner_base_url  || "";
-      f.critic_base_url.value   = s.critic_base_url   || "";
-      f.planner_model_url.value = s.planner_model_url || "";
-      f.critic_model_url.value  = s.critic_model_url  || "";
-      f.ollama_url.value        = s.ollama_url        || "";
-      f.planner_model.value     = s.planner_model     || "";
-      f.critic_model.value      = s.critic_model      || "";
-      f.executor_model.value    = s.executor_model    || "";
-    } catch (e) { console.warn("loadSettings failed", e); }
+
+  // ── Populate form from localStorage ─────────────────────────────
+  function populateForm() {
+    const s = storageLoad();
+    const provider = s.llm_provider || "ollama";
+    setActiveProvider(provider);
+
+    const f = settingsForm;
+    if (!f) return;
+    // Ollama panel
+    if (f.ollama_url)     f.ollama_url.value     = s.ollama_url     || "";
+    if (f.executor_model) f.executor_model.value = s.executor_model || "";
+    // NVIDIA / Custom panel
+    if (f.planner_api_key) f.planner_api_key.value = ""; // never pre-fill password
+    if (f.planner_base_url) f.planner_base_url.value = s.planner_base_url || "";
+    if (f.planner_model)    f.planner_model.value    = s.planner_model    || "";
+    if (f.critic_api_key)   f.critic_api_key.value   = "";
+    if (f.critic_base_url)  f.critic_base_url.value  = s.critic_base_url  || "";
+    if (f.critic_model)     f.critic_model.value     = s.critic_model     || "";
   }
+
+  // ── Save to localStorage + sync to backend cookie session ─────────
   async function saveSettings(e) {
     e.preventDefault();
+    const fd = new FormData(settingsForm);
     const payload = {};
-    for (const [k, v] of new FormData(settingsForm).entries()) {
-      payload[k] = (v === "" ? null : v);
-    }
-    settingsStat.textContent = "Saving…";
-    settingsStat.style.color = "var(--fg-dim)";
+    for (const [k, v] of fd.entries()) payload[k] = v === "" ? null : v;
+
+    // Merge with existing stored creds: empty key fields => keep old value
+    const existing = storageLoad();
+    const merged = {
+      llm_provider: payload.llm_provider || existing.llm_provider || "ollama",
+      ollama_url:     payload.ollama_url     || existing.ollama_url     || "",
+      executor_model: payload.executor_model || existing.executor_model || "",
+      planner_base_url: payload.planner_base_url || existing.planner_base_url || "",
+      planner_model:    payload.planner_model    || existing.planner_model    || "",
+      critic_base_url:  payload.critic_base_url  || existing.critic_base_url  || "",
+      critic_model:     payload.critic_model     || existing.critic_model     || "",
+      // Keys: only overwrite when user actually typed something
+      ...(payload.planner_api_key ? { planner_api_key: payload.planner_api_key } : { planner_api_key: existing.planner_api_key || "" }),
+      ...(payload.critic_api_key  ? { critic_api_key:  payload.critic_api_key  } : { critic_api_key:  existing.critic_api_key  || "" }),
+    };
+    storageSave(merged);
+
+    // Also sync to server cookie session (non-blocking)
+    _syncToServer(merged);
+
+    showStatus("✓ Saved", "ok");
+    setTimeout(closeSettings, 700);
+  }
+
+  async function _syncToServer(data) {
     try {
-      const r = await fetch(ENDPOINTS.settingsSet, {
+      await fetch(ENDPOINTS.settingsSet, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(data),
       });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${r.status}`);
-      }
-      settingsStat.textContent = "✓ Saved";
-      settingsStat.style.color = "var(--ok)";
-      // Clear key fields
-      settingsForm.planner_api_key.value = "";
-      settingsForm.critic_api_key.value  = "";
-      setTimeout(closeSettings, 500);
     } catch (err) {
-      settingsStat.textContent = "✗ " + err.message;
-      settingsStat.style.color = "var(--error)";
+      console.warn("[settings] server sync failed (non-critical):", err);
     }
+  }
+
+  function showStatus(text, kind = "ok") {
+    if (!settingsStat) return;
+    settingsStat.textContent = text;
+    settingsStat.className = `settings-status ${kind}`;
+  }
+
+  // ── Toggle API-key visibility ──────────────────────────────────
+  function initEyeBtn() {
+    const btn = $("#toggle-key-visibility");
+    const inp = $("#api-key-input");
+    if (!btn || !inp) return;
+    btn.addEventListener("click", () => {
+      const isPass = inp.type === "password";
+      inp.type = isPass ? "text" : "password";
+      btn.setAttribute("aria-pressed", String(isPass));
+    });
   }
   // ════════════════════════════════════════════════════════════
   // 6. Live log stream and command bridge
@@ -652,6 +720,23 @@
   // ════════════════════════════════════════════════════════════
   // 9. Send message (POST /api/chat → Command Bridge)
   // ════════════════════════════════════════════════════════════
+  function buildEphemeralCreds() {
+    /** Read stored credentials and build ephemeral_credentials payload. */
+    const s = storageLoad();
+    if (!s || !s.llm_provider) return null;
+    return {
+      llm_provider:   s.llm_provider   || null,
+      ollama_url:     s.ollama_url     || null,
+      executor_model: s.executor_model || null,
+      planner_api_key: s.planner_api_key || null,
+      planner_base_url: s.planner_base_url || null,
+      planner_model:   s.planner_model   || null,
+      critic_api_key:  s.critic_api_key  || null,
+      critic_base_url: s.critic_base_url || null,
+      critic_model:    s.critic_model    || null,
+    };
+  }
+
   async function sendMessage(text, action = null) {
     if (state.running) return;
     if (!text.trim()) return;
@@ -662,6 +747,8 @@
     renderBridgeEvent({ kind: "user", agent: "user", content: text, timestamp: Date.now() / 1000 });
 
     const payload = { message: text };
+    const creds = buildEphemeralCreds();
+    if (creds) payload.ephemeral_credentials = creds;
 
     const stop = await postSSE(ENDPOINTS.chat, payload, (ev) => {
       if (!ev || !ev.kind) return;
@@ -743,10 +830,19 @@
   async function boot() {
     // Settings
     settingsForm.addEventListener("submit", saveSettings);
-    modal.addEventListener("click", (e) => { if (e.target.matches("[data-close]")) closeSettings(); });
+    modal.addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === modal) closeSettings(); });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !modal.classList.contains("hidden")) closeSettings();
     });
+    // Gear button
+    const btnSettings = $("#btn-settings");
+    if (btnSettings) btnSettings.addEventListener("click", openSettings);
+    // Provider tabs
+    $$("[data-provider]").forEach((btn) => {
+      btn.addEventListener("click", () => setActiveProvider(btn.dataset.provider));
+    });
+    // Eye button (show/hide API key)
+    initEyeBtn();
 
     // Composer
     const form = $("#chat-form");

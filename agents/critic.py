@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from core.llm_clients import NvidiaClient, OllamaClient
+from core.llm_clients import BaseLLMClient, NvidiaClient, OllamaClient
 from core.models import AgentName
 from tools.registry import ToolRegistry
 
@@ -52,11 +52,13 @@ class CriticAgent(Agent):
         model: Optional[str] = None,
         nvidia: Optional[NvidiaClient] = None,
         ollama: Optional[OllamaClient] = None,
+        llm_client: Optional[BaseLLMClient] = None,
         tools: Optional[ToolRegistry] = None,
     ):
         super().__init__(
             model=model or self.MODEL_NAME,
             nvidia=nvidia,
             ollama=ollama,
+            llm_client=llm_client,
             tools=tools,
         )

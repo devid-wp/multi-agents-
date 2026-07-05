@@ -81,6 +81,11 @@ class UserCredentials(BaseModel):
     для Planner и Critic (на NIM эндпоинты и квоты часто разные).
     """
 
+    llm_provider: Optional[str] = Field(
+        default=None,
+        description="Global LLM provider override ('ollama' | 'nvidia' | 'custom')",
+    )
+
     # ── NVIDIA: Planner ────────────────────────────────────────────
     planner_api_key: Optional[str] = Field(
         default=None,

@@ -175,6 +175,8 @@ async def read_settings(request: Request):
     return SettingsResponse(
         has_planner_key=creds.has_planner_key(),
         has_critic_key=creds.has_critic_key(),
+        has_openai_key=creds.has_openai_key(),
+        has_gemini_key=creds.has_gemini_key(),
         planner_key_masked=mask_key(creds.planner_api_key),
         critic_key_masked=mask_key(creds.critic_api_key),
         planner_base_url=creds.planner_base_url,
@@ -185,6 +187,7 @@ async def read_settings(request: Request):
         planner_model=creds.planner_model,
         critic_model=creds.critic_model,
         executor_model=creds.executor_model,
+        llm_provider=creds.llm_provider,
     )
 
 
@@ -230,6 +233,7 @@ async def write_settings(request: Request, payload: SettingsPayload):
         planner_model=payload.planner_model or current.planner_model,
         critic_model=payload.critic_model or current.critic_model,
         executor_model=payload.executor_model or current.executor_model,
+        llm_provider=payload.llm_provider if payload.llm_provider is not None else current.llm_provider,
     )
     signed = save_credentials(new)
     resp = JSONResponse(
@@ -280,16 +284,17 @@ async def chat(request: Request, payload: ChatRequest):
     if payload.ephemeral_credentials:
         ep = payload.ephemeral_credentials
         creds = UserCredentials(
-            planner_api_key=ep.planner_api_key or creds.planner_api_key,
-            planner_base_url=ep.planner_base_url or creds.planner_base_url,
+            planner_api_key=ep.planner_api_key or ep.api_key or creds.planner_api_key,
+            planner_base_url=ep.planner_base_url or ep.base_url or creds.planner_base_url,
             planner_model_url=ep.planner_model_url or creds.planner_model_url,
-            critic_api_key=ep.critic_api_key or creds.critic_api_key,
-            critic_base_url=ep.critic_base_url or creds.critic_base_url,
+            critic_api_key=ep.critic_api_key or ep.api_key or creds.critic_api_key,
+            critic_base_url=ep.critic_base_url or ep.base_url or creds.critic_base_url,
             critic_model_url=ep.critic_model_url or creds.critic_model_url,
-            ollama_url=ep.ollama_url or creds.ollama_url,
+            ollama_url=ep.ollama_url or ep.base_url or creds.ollama_url,
             planner_model=ep.planner_model or creds.planner_model,
             critic_model=ep.critic_model or creds.critic_model,
             executor_model=ep.executor_model or creds.executor_model,
+            llm_provider=ep.llm_provider or creds.llm_provider,
         )
 
     # Импортируем здесь, чтобы избежать циклических импортов на старте

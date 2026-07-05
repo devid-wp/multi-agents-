@@ -28,7 +28,7 @@ import logging
 from typing import AsyncGenerator, Dict, List, Optional
 
 from core.config import UserCredentials, settings
-from core.llm_clients import LLMError, NvidiaClient, OllamaClient
+from core.llm_clients import BaseLLMClient, LLMError, NvidiaClient, OllamaClient, OpenAICompatibleClient
 from core.models import (
     AgentName,
     ChatMessage,

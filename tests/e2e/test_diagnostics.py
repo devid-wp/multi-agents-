@@ -51,6 +51,9 @@ def _reset_diagnostics_bus() -> Generator[None, None, None]:
     diag_mod.diagnostics_bus = new_bus
     main_mod.diagnostics_bus = new_bus
     reg_mod.diagnostics_bus = new_bus
+
+    global diagnostics_bus
+    diagnostics_bus = new_bus
     yield
 
 
