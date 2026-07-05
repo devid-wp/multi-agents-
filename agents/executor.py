@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from core.llm_clients import LLMError, OllamaClient
+from core.llm_clients import BaseLLMClient, LLMError, NvidiaClient, OllamaClient
 from core.models import AgentName, ChatMessage, Role, ToolResult
 from tools.registry import ToolRegistry
 
@@ -70,9 +70,9 @@ class ExecutorAgent(Agent):
         self,
         *,
         model: Optional[str] = None,
-        nvidia=None,
+        nvidia: Optional[NvidiaClient] = None,
         ollama: Optional[OllamaClient] = None,
-        llm_client: Optional[object] = None,
+        llm_client: Optional[BaseLLMClient] = None,
         tools: Optional[ToolRegistry] = None,
     ):
         super().__init__(
@@ -117,7 +117,7 @@ class ExecutorAgent(Agent):
         """
         if not ctx.tool_outcomes:
             return None
-        if not self._ollama and not self._nvidia:
+        if not self._llm_client and not self._ollama and not self._nvidia:
             return None
 
         summary = self._format_tool_summary(ctx.tool_outcomes)

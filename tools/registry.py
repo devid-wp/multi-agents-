@@ -24,15 +24,12 @@ from core.diagnostics import diagnostics_bus
 from core.models import ToolCall, ToolResult
 from tools.base import Tool
 from tools.bash_tool import ExecuteBash
-from tools.exceptions import SecurityError
+from tools.exceptions import SecurityError, ToolValidationError
 from tools.file_tool import DeleteFile, ListDir, ReadFile, SearchInFile, WriteFile, _safe_resolve
 from tools.system_tool import GetSystemStatus
 
 log = logging.getLogger("trinity.tools")
 
-
-class ToolValidationError(ValueError):
-    """Raised when the tool arguments do not match the declared schema."""
 
 
 class ToolRegistry:

@@ -115,6 +115,13 @@ class SettingsPayload(BaseModel):
     critic_model_url: Optional[str] = None
     # Ollama (Executor)
     ollama_url: Optional[str] = None
+    # OpenAI / Gemini
+    openai_api_key: Optional[str] = None
+    openai_base_url: Optional[str] = None
+    openai_model: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    gemini_base_url: Optional[str] = None
+    gemini_model: Optional[str] = None
     # Models
     planner_model: Optional[str] = None
     critic_model: Optional[str] = None
@@ -129,13 +136,19 @@ class SettingsResponse(BaseModel):
     # Наличие ключей (без самих значений)
     has_planner_key: bool
     has_critic_key: bool
+    has_openai_key: bool
+    has_gemini_key: bool
     # Маски ключей
     planner_key_masked: Optional[str] = None
     critic_key_masked: Optional[str] = None
+    openai_key_masked: Optional[str] = None
+    gemini_key_masked: Optional[str] = None
     # URL
     planner_base_url: str
     critic_base_url: str
     ollama_url: str
+    openai_base_url: Optional[str] = None
+    gemini_base_url: Optional[str] = None
     # Полные URL моделей (опционально)
     planner_model_url: Optional[str] = None
     critic_model_url: Optional[str] = None
@@ -143,6 +156,8 @@ class SettingsResponse(BaseModel):
     planner_model: str
     critic_model: str
     executor_model: str
+    openai_model: Optional[str] = None
+    gemini_model: Optional[str] = None
 
 
 class ChatRequest(BaseModel):
@@ -150,8 +165,9 @@ class ChatRequest(BaseModel):
 
     message: str = Field(..., min_length=1, max_length=20_000)
     # Опционально: пользователь может сразу прислать кредентиалы,
-    # не сохраняя их в сессию (для быстрых тестов)
+    # не сохраняя их в сессии (для быстрых тестов)
     ephemeral_credentials: Optional[SettingsPayload] = None
+    strategy: Optional[Literal["auto", "planner", "direct"]]
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -170,6 +186,7 @@ class ProgressEvent(BaseModel):
         "tool_result",     # результат инструмента
         "agent_done",      # агент закончил
         "final",           # финальный ответ пользователю
+        "strategy",        # выбранная стратегия маршрутизации
         "error",           # ошибка
         "info",            # информационное сообщение
     ]

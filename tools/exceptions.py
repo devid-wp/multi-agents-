@@ -35,4 +35,17 @@ class SecurityError(PermissionError):
         return self.message
 
 
-__all__ = ["SecurityError"]
+class ToolValidationError(ValueError):
+    """
+    Невалидные аргументы инструмента (несоответствие JSON-схеме).
+    """
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+    def __str__(self) -> str:
+        return self.message
+
+
+__all__ = ["SecurityError", "ToolValidationError"]
+

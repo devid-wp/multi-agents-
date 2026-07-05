@@ -327,6 +327,40 @@ class TestLLMAndToolValidation:
         assert msg.content == "ok"
 
     @pytest.mark.asyncio
+    async def test_executor_final_report_with_injected_llm_client(self) -> None:
+        from agents.executor import ExecutorAgent
+        from core.llm_clients import BaseLLMClient
+        from core.models import ChatMessage, Role, ToolResult
+        from agents.base import AgentContext
+
+        called = False
+
+        class DummyClient(BaseLLMClient):
+            async def chat(
+                self,
+                *,
+                model: str,
+                messages: List[ChatMessage],
+                temperature: float = 0.6,
+                max_tokens: int = 2048,
+                tools: Optional[List[Dict[str, Any]]] = None,
+                agent: Optional[Any] = None,
+            ) -> ChatMessage:
+                nonlocal called
+                called = True
+                return ChatMessage(role=Role.ASSISTANT, content="final report content")
+
+        executor = ExecutorAgent(llm_client=DummyClient())
+        ctx = AgentContext(task="some task")
+        ctx.tool_outcomes = [
+            ToolResult(tool_call_id="1", name="write_file", success=True, output="wrote file", error=None, duration_ms=10)
+        ]
+
+        report = await executor._request_final_report(ctx, previous_content="previous step")
+        assert called
+        assert report == "final report content"
+
+    @pytest.mark.asyncio
     async def test_registry_rejects_invalid_tool_arguments(self, temp_workspace: Path) -> None:
         from core.diagnostics import diagnostics_bus
         from core.models import ToolCall

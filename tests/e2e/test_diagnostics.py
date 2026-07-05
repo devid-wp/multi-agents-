@@ -45,10 +45,12 @@ def _reset_diagnostics_bus() -> Generator[None, None, None]:
     """
     import core.diagnostics as diag_mod
     import main as main_mod
+    import tools.registry as reg_mod
 
     new_bus = diag_mod.DiagnosticsBus()
     diag_mod.diagnostics_bus = new_bus
     main_mod.diagnostics_bus = new_bus
+    reg_mod.diagnostics_bus = new_bus
     yield
 
 

@@ -25,6 +25,9 @@ DEFAULT_EXECUTOR_MODEL = "qwen2.5-coder"
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_NVIDIA_URL = "https://integrate.api.nvidia.com/v1"
+DEFAULT_OPENAI_URL = "https://api.openai.com/v1"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_GEMINI_MODEL = "gemini-1.5"
 
 
 class AppSettings(BaseSettings):
@@ -115,6 +118,32 @@ class UserCredentials(BaseModel):
         description="Base URL for local Ollama server",
     )
 
+    # ── OpenAI / Gemini
+    openai_api_key: Optional[str] = Field(
+        default=None,
+        description="OpenAI API key for direct-response provider",
+    )
+    openai_base_url: Optional[str] = Field(
+        default=DEFAULT_OPENAI_URL,
+        description="Custom OpenAI-compatible base URL",
+    )
+    openai_model: Optional[str] = Field(
+        default=DEFAULT_OPENAI_MODEL,
+        description="OpenAI model name to use for direct response",
+    )
+    gemini_api_key: Optional[str] = Field(
+        default=None,
+        description="Gemini API key for direct-response provider",
+    )
+    gemini_base_url: Optional[str] = Field(
+        default=None,
+        description="Custom Gemini-compatible base URL",
+    )
+    gemini_model: Optional[str] = Field(
+        default=DEFAULT_GEMINI_MODEL,
+        description="Gemini model name to use for direct response",
+    )
+
     # ── Модели ─────────────────────────────────────────────────────
     planner_model: str = Field(default=DEFAULT_PLANNER_MODEL)
     critic_model: str = Field(default=DEFAULT_CRITIC_MODEL)
@@ -152,6 +181,14 @@ class UserCredentials(BaseModel):
     def has_critic_key(self) -> bool:
         """True, если ключ NVIDIA для Critic введён и непустой."""
         return bool(self.critic_api_key and self.critic_api_key.strip())
+
+    def has_openai_key(self) -> bool:
+        """True, если ключ OpenAI введён и непустой."""
+        return bool(self.openai_api_key and self.openai_api_key.strip())
+
+    def has_gemini_key(self) -> bool:
+        """True, если ключ Gemini введён и непустой."""
+        return bool(self.gemini_api_key and self.gemini_api_key.strip())
 
     def has_ollama(self) -> bool:
         """True, если Ollama URL валиден."""
