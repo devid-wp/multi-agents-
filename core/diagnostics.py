@@ -64,7 +64,6 @@ class DiagnosticsBus:
         self._history_max = history_max
         self._buffer: Deque[str] = collections.deque(maxlen=history_max)
         self._subs: Set[asyncio.Queue[str]] = set()
-        self._lock = asyncio.Lock()
         self._closed = False
 
     # ── публикация ──────────────────────────────────────────────
@@ -163,11 +162,10 @@ class DiagnosticsBus:
                     pass
 
     # ── подписка ────────────────────────────────────────────────
-    async def subscribe(self) -> asyncio.Queue[str]:
+    def subscribe(self) -> asyncio.Queue[str]:
         """Регистрирует нового подписчика и возвращает его очередь."""
         q: asyncio.Queue[str] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_MAXSIZE)
-        async with self._lock:
-            self._subs.add(q)
+        self._subs.add(q)
         return q
 
     def unsubscribe(self, q: asyncio.Queue[str]) -> None:
@@ -199,12 +197,11 @@ class DiagnosticsBus:
         return out
 
     # ── lifecycle (для тестов) ──────────────────────────────────
-    async def close(self) -> None:
+    def close(self) -> None:
         """Закрывает шину. Дальнейшие publish() — no-op."""
-        async with self._lock:
-            self._closed = True
-            self._subs.clear()
-            self._buffer.clear()
+        self._closed = True
+        self._subs.clear()
+        self._buffer.clear()
 
 
 # ───────────────────────────────────────────────────────────────────

@@ -142,68 +142,154 @@
 
       <form id="settings-form" autocomplete="off">
 
-        <!-- Provider selector -->
-        <div class="settings-section">
-          <div class="settings-section-label">LLM Provider</div>
-          <div class="provider-tabs" role="group" aria-label="LLM provider">
-            <button type="button" class="provider-tab" data-provider="ollama">Ollama</button>
-            <button type="button" class="provider-tab" data-provider="nvidia">NVIDIA NIM</button>
-            <button type="button" class="provider-tab" data-provider="custom">Custom / OpenAI</button>
-          </div>
-          <input type="hidden" name="llm_provider" id="llm-provider-input" value="ollama">
-        </div>
+        <div class="agents-config-container">
+          <!-- PLANNER -->
+          <div class="agent-config-block" id="config-planner" data-agent="planner">
+            <div class="agent-header">
+              <h3>[ PLANNER ]</h3>
+              <div class="type-toggle">
+                <label class="radio-label"><input type="radio" name="planner_type" value="base" checked> Base</label>
+                <label class="radio-label"><input type="radio" name="planner_type" value="custom"> Custom</label>
+              </div>
+            </div>
+            
+            <div class="agent-panel base-panel">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="planner_base_provider" class="cyber-select">
+                  <option value="gpt">GPT (OpenAI)</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="planner_base_api_key" placeholder="sk-..." class="cyber-input" autocomplete="new-password">
+              </div>
+            </div>
 
-        <!-- Ollama panel -->
-        <div class="provider-panel" id="panel-ollama">
-          <div class="settings-field">
-            <label for="ollama-url-input">Ollama Base URL</label>
-            <input id="ollama-url-input" name="ollama_url" type="text" placeholder="http://localhost:11434" autocomplete="off">
+            <div class="agent-panel custom-panel hidden">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="planner_custom_provider" class="cyber-select">
+                  <option value="nvidia">NVIDIA NIM</option>
+                  <option value="ollama">Ollama</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="planner_custom_api_key" placeholder="nvapi-..." class="cyber-input" autocomplete="new-password">
+              </div>
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label>Base URL</label>
+                  <input type="text" name="planner_base_url" placeholder="https://..." class="cyber-input">
+                </div>
+                <div class="settings-field">
+                  <label>Model Name</label>
+                  <input type="text" name="planner_model_name" placeholder="model-id" class="cyber-input">
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="settings-field">
-            <label for="executor-model-input">Executor model</label>
-            <input id="executor-model-input" name="executor_model" type="text" placeholder="qwen2.5-coder">
-          </div>
-        </div>
 
-        <!-- NVIDIA / Custom panel -->
-        <div class="provider-panel hidden" id="panel-nvidia">
-          <div class="settings-field">
-            <label for="api-key-input">
-              API Key
-              <span class="field-hint">stored in localStorage only</span>
-            </label>
-            <div class="input-with-eye">
-              <input id="api-key-input" name="planner_api_key" type="password" placeholder="nvapi-…" autocomplete="new-password">
-              <button type="button" class="eye-btn" id="toggle-key-visibility" aria-label="Show/hide key">
-                <svg id="eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-              </button>
+          <!-- EXECUTOR -->
+          <div class="agent-config-block" id="config-executor" data-agent="executor">
+            <div class="agent-header">
+              <h3>[ EXECUTOR ]</h3>
+              <div class="type-toggle">
+                <label class="radio-label"><input type="radio" name="executor_type" value="base"> Base</label>
+                <label class="radio-label"><input type="radio" name="executor_type" value="custom" checked> Custom</label>
+              </div>
+            </div>
+            
+            <div class="agent-panel base-panel hidden">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="executor_base_provider" class="cyber-select">
+                  <option value="gpt">GPT (OpenAI)</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="executor_base_api_key" placeholder="sk-..." class="cyber-input" autocomplete="new-password">
+              </div>
+            </div>
+
+            <div class="agent-panel custom-panel">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="executor_custom_provider" class="cyber-select">
+                  <option value="ollama">Ollama</option>
+                  <option value="nvidia">NVIDIA NIM</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="executor_custom_api_key" placeholder="Optional for Ollama" class="cyber-input" autocomplete="new-password">
+              </div>
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label>Base URL</label>
+                  <input type="text" name="executor_base_url" placeholder="http://localhost:11434" class="cyber-input">
+                </div>
+                <div class="settings-field">
+                  <label>Model Name</label>
+                  <input type="text" name="executor_model_name" placeholder="qwen2.5-coder" class="cyber-input">
+                </div>
+              </div>
             </div>
           </div>
-          <div class="settings-row">
-            <div class="settings-field">
-              <label for="base-url-input">Base URL</label>
-              <input id="base-url-input" name="planner_base_url" type="text" placeholder="https://integrate.api.nvidia.com/v1">
+
+          <!-- CRITIC -->
+          <div class="agent-config-block" id="config-critic" data-agent="critic">
+            <div class="agent-header">
+              <h3>[ CRITIC ]</h3>
+              <div class="type-toggle">
+                <label class="radio-label"><input type="radio" name="critic_type" value="base" checked> Base</label>
+                <label class="radio-label"><input type="radio" name="critic_type" value="custom"> Custom</label>
+              </div>
             </div>
-            <div class="settings-field">
-              <label for="planner-model-input">Model</label>
-              <input id="planner-model-input" name="planner_model" type="text" placeholder="meta/llama-3.1-70b-instruct">
+            
+            <div class="agent-panel base-panel">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="critic_base_provider" class="cyber-select">
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gpt">GPT (OpenAI)</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="critic_base_api_key" placeholder="sk-..." class="cyber-input" autocomplete="new-password">
+              </div>
             </div>
-          </div>
-          <div class="settings-field">
-            <label for="critic-api-key-input">Critic API Key <span class="field-hint">optional, uses Planner key if empty</span></label>
-            <input id="critic-api-key-input" name="critic_api_key" type="password" placeholder="nvapi-…" autocomplete="new-password">
-          </div>
-          <div class="settings-row">
-            <div class="settings-field">
-              <label for="critic-base-url-input">Critic Base URL</label>
-              <input id="critic-base-url-input" name="critic_base_url" type="text" placeholder="https://integrate.api.nvidia.com/v1">
-            </div>
-            <div class="settings-field">
-              <label for="critic-model-input">Critic Model</label>
-              <input id="critic-model-input" name="critic_model" type="text" placeholder="google/gemma-2-27b-it">
+
+            <div class="agent-panel custom-panel hidden">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="critic_custom_provider" class="cyber-select">
+                  <option value="nvidia">NVIDIA NIM</option>
+                  <option value="ollama">Ollama</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="critic_custom_api_key" placeholder="nvapi-..." class="cyber-input" autocomplete="new-password">
+              </div>
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label>Base URL</label>
+                  <input type="text" name="critic_base_url" placeholder="https://..." class="cyber-input">
+                </div>
+                <div class="settings-field">
+                  <label>Model Name</label>
+                  <input type="text" name="critic_model_name" placeholder="model-id" class="cyber-input">
+                </div>
+              </div>
             </div>
           </div>
         </div>

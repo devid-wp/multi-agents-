@@ -56,62 +56,46 @@ class AgentManager:
         self.creds = creds
         self.tools = ToolRegistry(workspace=settings.workspace_dir)
 
-        # ── LLM-клиенты ───────────────────────────────────────────
-        # NvidiaClient маршрутизирует запросы по AgentName:
-        # Planner идёт к (planner_api_key, planner_base_url[, planner_model_url]),
-        # Critic — к (critic_api_key, critic_base_url[, critic_model_url]).
-        # 3-й элемент кортежа (model_url) — опциональный полный URL,
-        # перекрывает {base_url}/chat/completions, если у агента свой NIM-эндпоинт.
-        self._nvidia: Optional[NvidiaClient] = None
-        providers: Dict[AgentName, tuple] = {}
-        if creds.has_planner_key():
-            providers[AgentName.PLANNER] = (
-                creds.planner_api_key or "",
-                creds.planner_base_url,
-                creds.planner_model_url,
-            )
-        if creds.has_critic_key():
-            providers[AgentName.CRITIC] = (
-                creds.critic_api_key or "",
-                creds.critic_base_url,
-                creds.critic_model_url,
-            )
-        if providers:
-            self._nvidia = NvidiaClient(providers=providers)
+        from core.llm_clients import NvidiaClient, OllamaClient, OpenAICompatibleClient
 
-        self._ollama: Optional[OllamaClient] = None
-        if creds.has_ollama():
-            self._ollama = OllamaClient(base_url=creds.ollama_url)
+        def _create_client(cfg, agent_name: AgentName):
+            if not cfg:
+                return None
+            if cfg.provider == "ollama":
+                return OllamaClient(base_url=cfg.base_url or "http://localhost:11434")
+            elif cfg.provider == "nvidia":
+                providers = {agent_name: (cfg.api_key or "", cfg.base_url or "", None)}
+                return NvidiaClient(providers=providers)
+            else:
+                return OpenAICompatibleClient(
+                    api_key=cfg.api_key,
+                    base_url=cfg.base_url or "",
+                    model=cfg.model_name
+                )
 
-        # ── Агенты ────────────────────────────────────────────────
-        # Planner/Critic получают ОДИН И ТОТ ЖЕ NvidiaClient —
-        # он сам разберётся, чей ключ использовать, по self.name.
+        planner_client = _create_client(creds.planner, AgentName.PLANNER)
+        critic_client = _create_client(creds.critic, AgentName.CRITIC)
+        executor_client = _create_client(creds.executor, AgentName.EXECUTOR)
+
         self.planner = PlannerAgent(
-            model=creds.planner_model,
-            nvidia=self._nvidia,
+            model=creds.planner.model_name if creds.planner else "abacusai/dracarys-llama-3.1-70b-instruct",
+            llm_client=planner_client,
             tools=self.tools,
         )
-        # ── DEBUG_CRITIC: принудительный override для диагностики 404 ──
-        # Хардкодим модель и base_url, чтобы исключить любые внешние
-        # влияния (cookie-сессия, config.py, .env). Если с этими
-        # значениями Critic всё равно вернёт 404 — дело в NVIDIA API
-        # (rate limit / quota / доступ к модели), а не в нашем коде.
-        print(
-            f"DEBUG_CRITIC: hardcoded model='meta/llama-3.1-70b-instruct', "
-            f"base_url='https://integrate.api.nvidia.com/v1' "
-            f"(was: model={creds.critic_model!r}, "
-            f"creds.critic_base_url={creds.critic_base_url!r})"
-        )
         self.critic = CriticAgent(
-            model="meta/llama-3.1-70b-instruct",
-            nvidia=self._nvidia,
+            model=creds.critic.model_name if creds.critic else "google/gemma-2-27b-it",
+            llm_client=critic_client,
             tools=self.tools,
         )
         self.executor = ExecutorAgent(
-            model=creds.executor_model,
-            ollama=self._ollama,
+            model=creds.executor.model_name if creds.executor else "qwen2.5-coder",
+            llm_client=executor_client,
             tools=self.tools,
         )
+        
+        # Keep old generic clients for backward compatibility if Agent needs them
+        self._nvidia = planner_client if creds.planner and creds.planner.provider == "nvidia" else None
+        self._ollama = executor_client if creds.executor and creds.executor.provider == "ollama" else None
 
     # ──────────────────────────────────────────────────────────────
     # Проверка готовности
@@ -119,16 +103,16 @@ class AgentManager:
     def readiness_report(self) -> dict:
         """Возвращает, какие компоненты готовы к работе."""
         return {
-            "planner_configured": self.creds.has_planner_key(),
-            "critic_configured": self.creds.has_critic_key(),
-            "ollama_configured": self._ollama is not None,
+            "planner_configured": bool(self.creds.planner and self.creds.planner.api_key),
+            "critic_configured": bool(self.creds.critic and self.creds.critic.api_key),
+            "ollama_configured": bool(self.creds.executor and self.creds.executor.provider == "ollama"),
             "planner_model": self.planner.MODEL_NAME,
             "critic_model": self.critic.MODEL_NAME,
             "executor_model": self.executor.MODEL_NAME,
-            "planner_base_url": self.creds.planner_base_url,
-            "critic_base_url": self.creds.critic_base_url,
-            "planner_model_url": self.creds.planner_model_url,
-            "critic_model_url": self.creds.critic_model_url,
+            "planner_base_url": self.creds.planner.base_url if self.creds.planner else "",
+            "critic_base_url": self.creds.critic.base_url if self.creds.critic else "",
+            "planner_model_url": None,
+            "critic_model_url": None,
         }
 
     # ──────────────────────────────────────────────────────────────

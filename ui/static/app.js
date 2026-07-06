@@ -280,22 +280,59 @@
   }
 
   // ── Provider tab switching ─────────────────────────────────────
-  const PROVIDER_PANELS = { ollama: "#panel-ollama", nvidia: "#panel-nvidia", custom: "#panel-nvidia" };
+  // Event listeners for radio toggles
+  document.querySelectorAll('input[type="radio"][name$="_type"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const agent = e.target.name.split('_')[0]; // "planner", "executor", "critic"
+      const type = e.target.value; // "base" or "custom"
+      
+      const block = document.getElementById(`config-${agent}`);
+      if (!block) return;
+      
+      const basePanel = block.querySelector('.base-panel');
+      const customPanel = block.querySelector('.custom-panel');
+      
+      if (type === 'base') {
+        basePanel.classList.remove('hidden');
+        customPanel.classList.add('hidden');
+      } else {
+        basePanel.classList.add('hidden');
+        customPanel.classList.remove('hidden');
+      }
+    });
+  });
 
-  function setActiveProvider(p) {
-    $$("[data-provider]").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.provider === p);
-    });
-    // Show/hide panels
-    Object.values(PROVIDER_PANELS).forEach((sel) => {
-      const el = $(sel);
-      if (el) el.classList.add("hidden");
-    });
-    const target = $(PROVIDER_PANELS[p] || "#panel-ollama");
-    if (target) target.classList.remove("hidden");
-    const inp = $("#llm-provider-input");
-    if (inp) inp.value = p;
+  // Event listeners for custom provider dropdowns to hide API key for Ollama
+  // and auto-fill Base URL default value
+  const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+  const DEFAULT_NVIDIA_URL = 'https://integrate.api.nvidia.com/v1';
+
+  function applyProviderVisibility(sel) {
+    const agentName = sel.name.split('_')[0];
+    const isOllama = sel.value === 'ollama';
+
+    // Show/hide API Key field
+    const apiKeyInput = document.querySelector(`input[name="${agentName}_custom_api_key"]`);
+    if (apiKeyInput) {
+      const field = apiKeyInput.closest('.settings-field');
+      if (field) field.style.display = isOllama ? 'none' : '';
+    }
+
+    // Auto-fill Base URL if empty or switching defaults
+    const baseUrlInput = document.querySelector(`input[name="${agentName}_base_url"]`);
+    if (baseUrlInput) {
+      const current = baseUrlInput.value.trim();
+      const isDefaultLike = !current || current === DEFAULT_OLLAMA_URL || current === DEFAULT_NVIDIA_URL;
+      if (isDefaultLike) {
+        baseUrlInput.value = isOllama ? DEFAULT_OLLAMA_URL : DEFAULT_NVIDIA_URL;
+      }
+    }
   }
+
+  document.querySelectorAll('select[name$="_custom_provider"]').forEach(select => {
+    applyProviderVisibility(select);
+    select.addEventListener('change', (e) => applyProviderVisibility(e.target));
+  });
 
   // ── Modal open / close ─────────────────────────────────────────
   function openSettings() {
@@ -312,48 +349,81 @@
   // ── Populate form from localStorage ─────────────────────────────
   function populateForm() {
     const s = storageLoad();
-    const provider = s.llm_provider || "ollama";
-    setActiveProvider(provider);
-
     const f = settingsForm;
     if (!f) return;
-    // Ollama panel
-    if (f.ollama_url)     f.ollama_url.value     = s.ollama_url     || "";
-    if (f.executor_model) f.executor_model.value = s.executor_model || "";
-    // NVIDIA / Custom panel
-    if (f.planner_api_key) f.planner_api_key.value = ""; // never pre-fill password
-    if (f.planner_base_url) f.planner_base_url.value = s.planner_base_url || "";
-    if (f.planner_model)    f.planner_model.value    = s.planner_model    || "";
-    if (f.critic_api_key)   f.critic_api_key.value   = "";
-    if (f.critic_base_url)  f.critic_base_url.value  = s.critic_base_url  || "";
-    if (f.critic_model)     f.critic_model.value     = s.critic_model     || "";
+    
+    const pop = (agentName) => {
+      const cfg = s[agentName] || {};
+      // "nvidia" and "ollama" fall under Custom. Standard ones fall under Base.
+      const isCustom = ["nvidia", "ollama"].includes(cfg.provider);
+      const radioName = `${agentName}_type`;
+      
+      if (f.elements[radioName]) {
+        // Trigger UI toggle
+        const radios = Array.from(f.elements[radioName]);
+        const targetRadio = radios.find(r => r.value === (isCustom ? "custom" : "base"));
+        if (targetRadio) {
+          targetRadio.checked = true;
+          targetRadio.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+      
+      if (isCustom) {
+        const providerSel = f.elements[`${agentName}_custom_provider`];
+        if (providerSel) {
+          providerSel.value = cfg.provider || "nvidia";
+          // Re-trigger visibility so API key is hidden for Ollama right away
+          applyProviderVisibility(providerSel);
+        }
+        if (f.elements[`${agentName}_base_url`]) f.elements[`${agentName}_base_url`].value = cfg.base_url || "";
+        if (f.elements[`${agentName}_model_name`]) f.elements[`${agentName}_model_name`].value = cfg.model_name || "";
+      } else {
+        if (f.elements[`${agentName}_base_provider`]) f.elements[`${agentName}_base_provider`].value = cfg.provider || "gpt";
+      }
+      
+      // Clear password fields on open
+      if (f.elements[`${agentName}_base_api_key`]) f.elements[`${agentName}_base_api_key`].value = "";
+      if (f.elements[`${agentName}_custom_api_key`]) f.elements[`${agentName}_custom_api_key`].value = "";
+    };
+    
+    pop("planner");
+    pop("executor");
+    pop("critic");
   }
 
   // ── Save to localStorage + sync to backend cookie session ─────────
   async function saveSettings(e) {
     e.preventDefault();
     const fd = new FormData(settingsForm);
-    const payload = {};
-    for (const [k, v] of fd.entries()) payload[k] = v === "" ? null : v;
-
-    // Merge with existing stored creds: empty key fields => keep old value
     const existing = storageLoad();
-    const merged = {
-      llm_provider: payload.llm_provider || existing.llm_provider || "ollama",
-      ollama_url:     payload.ollama_url     || existing.ollama_url     || "",
-      executor_model: payload.executor_model || existing.executor_model || "",
-      planner_base_url: payload.planner_base_url || existing.planner_base_url || "",
-      planner_model:    payload.planner_model    || existing.planner_model    || "",
-      critic_base_url:  payload.critic_base_url  || existing.critic_base_url  || "",
-      critic_model:     payload.critic_model     || existing.critic_model     || "",
-      // Keys: only overwrite when user actually typed something
-      ...(payload.planner_api_key ? { planner_api_key: payload.planner_api_key } : { planner_api_key: existing.planner_api_key || "" }),
-      ...(payload.critic_api_key  ? { critic_api_key:  payload.critic_api_key  } : { critic_api_key:  existing.critic_api_key  || "" }),
+    
+    const getAgentPayload = (agentName) => {
+        const type = fd.get(`${agentName}_type`);
+        const oldCfg = existing[agentName] || {};
+        if (type === "base") {
+            const provider = fd.get(`${agentName}_base_provider`);
+            const api_key = fd.get(`${agentName}_base_api_key`) || oldCfg.api_key || null;
+            return { provider, api_key, base_url: null, model_name: null };
+        } else {
+            const provider = fd.get(`${agentName}_custom_provider`);
+            // Ollama is local — it never needs an API key
+            const api_key = provider === 'ollama'
+                ? null
+                : (fd.get(`${agentName}_custom_api_key`) || oldCfg.api_key || null);
+            const base_url = fd.get(`${agentName}_base_url`) || null;
+            const model_name = fd.get(`${agentName}_model_name`) || null;
+            return { provider, api_key, base_url, model_name };
+        }
     };
-    storageSave(merged);
-
-    // Also sync to server cookie session (non-blocking)
-    _syncToServer(merged);
+    
+    const payload = {
+        planner: getAgentPayload("planner"),
+        executor: getAgentPayload("executor"),
+        critic: getAgentPayload("critic")
+    };
+    
+    storageSave(payload);
+    _syncToServer(payload);
 
     showStatus("✓ Saved", "ok");
     setTimeout(closeSettings, 700);

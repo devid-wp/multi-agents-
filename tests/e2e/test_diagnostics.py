@@ -190,47 +190,22 @@ async def test_executor_agent_blocked_write_file_publishes_tool_execution(
 
 
 # ───────────────────────────────────────────────────────────────────
-# /api/diagnostics/stream
+# /api/diagnostics/stream  (реальный HTTP через live uvicorn)
+#
+# NOTE: httpx.ASGITransport дедлочится на бесконечных SSE-стримах,
+# потому что gen() и aiter_lines() делят один event loop и взаимно
+# блокируют друг друга. Поэтому SSE-тесты запускают uvicorn в
+# фоновом потоке (фикстура live_server_url) и используют реальный HTTP.
 # ───────────────────────────────────────────────────────────────────
-async def _read_sse_events(
-    resp: httpx.Response, *, until: int = 1, timeout: float = 5.0
-) -> List[Dict[str, Any]]:
-    """
-    Читает SSE-кадры из `resp.aiter_lines()` и возвращает список
-    распарсенных JSON-объектов из `data: …` строк.
-
-    Останавливается, как только набрали `until` событий, или по таймауту.
-    """
-    events: List[Dict[str, Any]] = []
-
-    async def _iter():
-        async for line in resp.aiter_lines():
-            yield line
-
-    async with asyncio.timeout(timeout):
-        async for line in _iter():
-            print(f"DEBUG_CLIENT_READ: {line!r}")
-            if not line.startswith("data:"):
-                continue
-            payload = line[len("data:"):].strip()
-            try:
-                ev = json.loads(payload)
-            except json.JSONDecodeError:
-                continue
-            events.append(ev)
-            if len(events) >= until:
-                return events
-    return events
-
 
 async def test_stream_subscribes_and_emits_published_event(
-    app_client: httpx.AsyncClient,
+    live_server_url: str,
 ) -> None:
     """
-    Sanity fan-out:
-      a) открываем SSE-стрим;
-      b) публикуем tool_call event;
-      c) читаем следующий data-кадр — он соответствует нашему событию.
+    Sanity fan-out через реальный HTTP:
+      a) открываем SSE-стрим к live-серверу;
+      b) параллельно публикуем tool_call через diagnostics_bus;
+      c) читаем data-кадр — он соответствует нашему событию.
     """
     ev = ProgressEvent(
         kind="tool_call",
@@ -238,20 +213,41 @@ async def test_stream_subscribes_and_emits_published_event(
         tool=ToolCall(name="list_dir", arguments={"path": "."}),
     )
 
-    print(f"DEBUG_TEST: diagnostics_bus id = {id(diagnostics_bus)}")
-    async with app_client.stream("GET", "/api/diagnostics/stream") as resp:
-        assert resp.status_code == 200
-        assert resp.headers["content-type"].startswith("text/event-stream")
-
-        # Даём серверу долю секунды, чтобы он успел зарегистрировать подписчика,
-        # иначе publish() доедет до пустого _subs и тест не увидит события.
-        await asyncio.sleep(0.2)
+    async def _publish_after_delay() -> None:
+        # Ждём, пока SSE-генератор на сервере сделает subscribe().
+        # subscribe() вызывается ДО первого yield, т.е. до отправки `: ready`.
+        # После sleep(0.5) сервер гарантированно зарегистрировал подписчика.
+        await asyncio.sleep(0.5)
         diagnostics_bus.publish(ev)
 
-        events = await _read_sse_events(resp, until=1, timeout=5.0)
+    events: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(base_url=live_server_url, timeout=10.0) as client:
+        async with client.stream("GET", "/api/diagnostics/stream") as resp:
+            assert resp.status_code == 200
+            assert resp.headers["content-type"].startswith("text/event-stream")
 
-    assert len(events) >= 1, "Не получили ни одного SSE-кадра"
-    # Первый data-кадр — наш tool_call
+            task = asyncio.create_task(_publish_after_delay())
+            try:
+                async with asyncio.timeout(6.0):
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        try:
+                            events.append(json.loads(line[len("data:"):].strip()))
+                        except json.JSONDecodeError:
+                            continue
+                        if len(events) >= 1:
+                            break
+            except TimeoutError:
+                pass
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    assert len(events) >= 1, f"Не получили ни одного SSE-кадра: {events!r}"
     first = events[0]
     assert first["kind"] == "tool_call"
     assert first["agent"] == "planner"
@@ -259,35 +255,52 @@ async def test_stream_subscribes_and_emits_published_event(
 
 
 async def test_stream_does_not_send_history_to_new_subscribers(
-    app_client: httpx.AsyncClient,
+    live_server_url: str,
 ) -> None:
     """
-    После publish() и отписки — новый клиент не должен получить
-    ретроспективно старые события (шина — pub/sub, не replay).
+    Новый клиент не должен получить события, опубликованные ДО подписки
+    (шина — pub/sub, не replay).
     """
-    # Сначала публикуем событие (старый подписчик его получит, но никто не слушает)
-    old_ev = ProgressEvent(
-        kind="tool_result",
-        agent=AgentName.EXECUTOR,
+    old_ev = ProgressEvent(kind="tool_result", agent=AgentName.EXECUTOR)
+    diagnostics_bus.publish(old_ev)  # до подписки — НЕ должен прийти новому клиенту
+
+    new_ev = ProgressEvent(
+        kind="tool_call",
+        agent=AgentName.CRITIC,
+        tool=ToolCall(name="read_file", arguments={"path": "x"}),
     )
-    diagnostics_bus.publish(old_ev)
-    # Оно уже в буфере, но НЕ должно приехать новому подписчику как live-кадр.
 
-    async with app_client.stream("GET", "/api/diagnostics/stream") as resp:
-        assert resp.status_code == 200
-
-        # Подождём чуть-чуть и опубликуем НОВОЕ событие.
-        await asyncio.sleep(0.2)
-        new_ev = ProgressEvent(
-            kind="tool_call",
-            agent=AgentName.CRITIC,
-            tool=ToolCall(name="read_file", arguments={"path": "x"}),
-        )
+    async def _publish_after_delay() -> None:
+        await asyncio.sleep(0.5)
         diagnostics_bus.publish(new_ev)
 
-        events = await _read_sse_events(resp, until=1, timeout=3.0)
+    events: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(base_url=live_server_url, timeout=10.0) as client:
+        async with client.stream("GET", "/api/diagnostics/stream") as resp:
+            assert resp.status_code == 200
 
-    # В стриме должен быть ТОЛЬКО новый event (старый пришёл ДО подписки).
+            task = asyncio.create_task(_publish_after_delay())
+            try:
+                async with asyncio.timeout(4.0):
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        try:
+                            events.append(json.loads(line[len("data:"):].strip()))
+                        except json.JSONDecodeError:
+                            continue
+                        if len(events) >= 1:
+                            break
+            except TimeoutError:
+                pass
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
     assert len(events) == 1, f"Ожидался ровно 1 кадр, получили {len(events)}: {events!r}"
     assert events[0]["agent"] == "critic"
     assert events[0]["tool"]["name"] == "read_file"
+

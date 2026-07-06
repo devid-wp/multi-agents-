@@ -102,68 +102,33 @@ class ToolResult(BaseModel):
 # ───────────────────────────────────────────────────────────────────
 # Запросы / ответы FastAPI
 # ───────────────────────────────────────────────────────────────────
-class SettingsPayload(BaseModel):
-    """Тело POST /api/settings — данные из формы."""
-
-    # Planner (NVIDIA)
-    planner_api_key: Optional[str] = None
-    planner_base_url: Optional[str] = None
-    planner_model_url: Optional[str] = None
-    # Critic (NVIDIA)
-    critic_api_key: Optional[str] = None
-    critic_base_url: Optional[str] = None
-    critic_model_url: Optional[str] = None
-    # Ollama (Executor)
-    ollama_url: Optional[str] = None
-    # OpenAI / Gemini
-    openai_api_key: Optional[str] = None
-    openai_base_url: Optional[str] = None
-    openai_model: Optional[str] = None
-    gemini_api_key: Optional[str] = None
-    gemini_base_url: Optional[str] = None
-    gemini_model: Optional[str] = None
-    # Models
-    planner_model: Optional[str] = None
-    critic_model: Optional[str] = None
-    executor_model: Optional[str] = None
-    # Legacy single-key support (если прислали — размажем по обоим)
-    nvidia_api_key: Optional[str] = None
-    # Global provider override
-    llm_provider: Optional[str] = None
+class AgentProviderConfig(BaseModel):
+    provider: str
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    model_name: Optional[str] = None
+
+
+class SettingsPayload(BaseModel):
+    """Тело POST /api/settings — данные из формы."""
+    planner: Optional[AgentProviderConfig] = None
+    executor: Optional[AgentProviderConfig] = None
+    critic: Optional[AgentProviderConfig] = None
+
+
+class AgentProviderResponse(BaseModel):
+    provider: str
+    has_key: bool
+    key_masked: Optional[str] = None
+    base_url: Optional[str] = None
+    model_name: Optional[str] = None
 
 
 class SettingsResponse(BaseModel):
     """Ответ GET /api/settings — для восстановления формы."""
-
-    # Наличие ключей (без самих значений)
-    has_planner_key: bool
-    has_critic_key: bool
-    has_openai_key: bool
-    has_gemini_key: bool
-    # Маски ключей
-    planner_key_masked: Optional[str] = None
-    critic_key_masked: Optional[str] = None
-    openai_key_masked: Optional[str] = None
-    gemini_key_masked: Optional[str] = None
-    # URL
-    planner_base_url: str
-    critic_base_url: str
-    ollama_url: str
-    openai_base_url: Optional[str] = None
-    gemini_base_url: Optional[str] = None
-    # Полные URL моделей (опционально)
-    planner_model_url: Optional[str] = None
-    critic_model_url: Optional[str] = None
-    # Models
-    planner_model: str
-    critic_model: str
-    executor_model: str
-    openai_model: Optional[str] = None
-    gemini_model: Optional[str] = None
-    # Global provider (для фронтенда)
-    llm_provider: Optional[str] = None
+    planner: Optional[AgentProviderResponse] = None
+    executor: Optional[AgentProviderResponse] = None
+    critic: Optional[AgentProviderResponse] = None
 
 
 class ChatRequest(BaseModel):

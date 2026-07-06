@@ -172,82 +172,65 @@ async def legacy_chat(request: Request):
 @app.get("/api/settings", response_model=SettingsResponse)
 async def read_settings(request: Request):
     creds = get_credentials(request)
+    
+    def _map_agent(cfg):
+        if not cfg:
+            return None
+        return {
+            "provider": cfg.provider,
+            "has_key": bool(cfg.api_key and cfg.api_key.strip()),
+            "key_masked": mask_key(cfg.api_key),
+            "base_url": cfg.base_url,
+            "model_name": cfg.model_name
+        }
+        
     return SettingsResponse(
-        has_planner_key=creds.has_planner_key(),
-        has_critic_key=creds.has_critic_key(),
-        has_openai_key=creds.has_openai_key(),
-        has_gemini_key=creds.has_gemini_key(),
-        planner_key_masked=mask_key(creds.planner_api_key),
-        critic_key_masked=mask_key(creds.critic_api_key),
-        planner_base_url=creds.planner_base_url,
-        critic_base_url=creds.critic_base_url,
-        planner_model_url=creds.planner_model_url,
-        critic_model_url=creds.critic_model_url,
-        ollama_url=creds.ollama_url,
-        planner_model=creds.planner_model,
-        critic_model=creds.critic_model,
-        executor_model=creds.executor_model,
-        llm_provider=creds.llm_provider,
+        planner=_map_agent(creds.planner),
+        executor=_map_agent(creds.executor),
+        critic=_map_agent(creds.critic)
     )
 
 
 @app.post("/api/settings")
 async def write_settings(request: Request, payload: SettingsPayload):
     """Сохраняет настройки в подписанной cookie-сессии."""
+    from core.models import AgentProviderConfig
     current = get_credentials(request)
 
-    # Валидация URL
-    planner_url = _validate_url(payload.planner_base_url)
-    critic_url = _validate_url(payload.critic_base_url)
-    ollama_url = _validate_url(payload.ollama_url)
-    planner_model_url = _validate_url(payload.planner_model_url)
-    critic_model_url = _validate_url(payload.critic_model_url)
+    def _merge(old, new):
+        if not new:
+            return old
+        return AgentProviderConfig(
+            provider=new.provider or (old.provider if old else "nvidia"),
+            api_key=new.api_key if new.api_key not in (None, "") else (old.api_key if old else None),
+            base_url=_validate_url(new.base_url) or (old.base_url if old else None),
+            model_name=new.model_name or (old.model_name if old else None)
+        )
 
-    # Мержим: для ключей/base URL "пусто = оставить прежнее".
-    # Для model_url "пусто = сбросить переопределение" (вернуть на дефолт),
-    # потому что пользователь может осознанно хотеть отключить кастомный URL.
-    new = UserCredentials(
-        planner_api_key=(
-            payload.planner_api_key
-            if payload.planner_api_key not in (None, "")
-            else current.planner_api_key
-        ),
-        planner_base_url=planner_url or current.planner_base_url,
-        planner_model_url=(
-            planner_model_url
-            if payload.planner_model_url is not None
-            else current.planner_model_url
-        ),
-        critic_api_key=(
-            payload.critic_api_key
-            if payload.critic_api_key not in (None, "")
-            else current.critic_api_key
-        ),
-        critic_base_url=critic_url or current.critic_base_url,
-        critic_model_url=(
-            critic_model_url
-            if payload.critic_model_url is not None
-            else current.critic_model_url
-        ),
-        ollama_url=ollama_url or current.ollama_url,
-        planner_model=payload.planner_model or current.planner_model,
-        critic_model=payload.critic_model or current.critic_model,
-        executor_model=payload.executor_model or current.executor_model,
-        llm_provider=payload.llm_provider if payload.llm_provider is not None else current.llm_provider,
+    new_creds = UserCredentials(
+        planner=_merge(current.planner, payload.planner),
+        critic=_merge(current.critic, payload.critic),
+        executor=_merge(current.executor, payload.executor),
     )
-    signed = save_credentials(new)
+    signed = save_credentials(new_creds)
+    
+    def _resp(cfg):
+        if not cfg:
+            return None
+        return {
+            "provider": cfg.provider,
+            "has_key": bool(cfg.api_key and cfg.api_key.strip()),
+            "key_masked": mask_key(cfg.api_key),
+            "base_url": cfg.base_url,
+            "model_name": cfg.model_name
+        }
+
     resp = JSONResponse(
         {
             "ok": True,
-            "has_planner_key": new.has_planner_key(),
-            "has_critic_key": new.has_critic_key(),
-            "planner_key_masked": mask_key(new.planner_api_key),
-            "critic_key_masked": mask_key(new.critic_api_key),
-            "planner_base_url": new.planner_base_url,
-            "critic_base_url": new.critic_base_url,
-            "planner_model_url": new.planner_model_url,
-            "critic_model_url": new.critic_model_url,
-            "ollama_url": new.ollama_url,
+            "planner": _resp(new_creds.planner),
+            "critic": _resp(new_creds.critic),
+            "executor": _resp(new_creds.executor),
         }
     )
     resp.set_cookie(
@@ -283,18 +266,22 @@ async def chat(request: Request, payload: ChatRequest):
     # используем их для этого одного запроса
     if payload.ephemeral_credentials:
         ep = payload.ephemeral_credentials
+        from core.models import AgentProviderConfig
+        
+        def _merge(old, new):
+            if not new:
+                return old
+            return AgentProviderConfig(
+                provider=new.provider or (old.provider if old else "nvidia"),
+                api_key=new.api_key if new.api_key not in (None, "") else (old.api_key if old else None),
+                base_url=new.base_url or (old.base_url if old else None),
+                model_name=new.model_name or (old.model_name if old else None)
+            )
+
         creds = UserCredentials(
-            planner_api_key=ep.planner_api_key or ep.api_key or creds.planner_api_key,
-            planner_base_url=ep.planner_base_url or ep.base_url or creds.planner_base_url,
-            planner_model_url=ep.planner_model_url or creds.planner_model_url,
-            critic_api_key=ep.critic_api_key or ep.api_key or creds.critic_api_key,
-            critic_base_url=ep.critic_base_url or ep.base_url or creds.critic_base_url,
-            critic_model_url=ep.critic_model_url or creds.critic_model_url,
-            ollama_url=ep.ollama_url or ep.base_url or creds.ollama_url,
-            planner_model=ep.planner_model or creds.planner_model,
-            critic_model=ep.critic_model or creds.critic_model,
-            executor_model=ep.executor_model or creds.executor_model,
-            llm_provider=ep.llm_provider or creds.llm_provider,
+            planner=_merge(creds.planner, ep.planner),
+            critic=_merge(creds.critic, ep.critic),
+            executor=_merge(creds.executor, ep.executor),
         )
 
     # Импортируем здесь, чтобы избежать циклических импортов на старте
@@ -388,7 +375,6 @@ SSE_HEADERS = {
 
 @app.get("/api/diagnostics/stream")
 async def diagnostics_stream(request: Request):
-    print(f"DEBUG_SERVER: diagnostics_bus id = {id(diagnostics_bus)}")
     """
     Persistent SSE: фанит-аутит tool_call/tool_result/error от шины.
 
@@ -397,14 +383,13 @@ async def diagnostics_stream(request: Request):
       data: <ProgressEvent JSON>\\n\\n   — каждое событие
       : ping\\n\\n               — раз в ~15s, чтобы прокси не закрыли idle
     """
-    queue = await diagnostics_bus.subscribe()
+    queue = diagnostics_bus.subscribe()
 
     async def gen() -> AsyncGenerator[str, None]:
-        disconnect_task = asyncio.create_task(request.is_disconnected())
         try:
             yield ": ready\n\n"
             ping_at = asyncio.get_event_loop().time() + 15.0
-            while not disconnect_task.done():
+            while True:
                 # Ждём либо нового события, либо таймаута для ping
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=1.0)
@@ -419,7 +404,6 @@ async def diagnostics_stream(request: Request):
         except asyncio.CancelledError:
             return
         finally:
-            disconnect_task.cancel()
             diagnostics_bus.unsubscribe(queue)
 
     return StreamingResponse(
@@ -584,12 +568,9 @@ async def workspace_stream(request: Request):
         return False
 
     async def gen() -> AsyncGenerator[str, None]:
-        disconnect_task = asyncio.create_task(request.is_disconnected())
         yield ": ready\n\n"
         try:
             async for changes in awatch(workspace, step=200, recursive=True):
-                if disconnect_task.done():
-                    return
                 for change_type, abs_path in changes:
                     p = Path(abs_path)
                     if _should_ignore(p):
@@ -609,8 +590,6 @@ async def workspace_stream(request: Request):
                     yield f"data: {json.dumps({'type': kind, 'path': rel})}\n\n"
         except asyncio.CancelledError:
             return
-        finally:
-            disconnect_task.cancel()
 
     return StreamingResponse(
         gen(),

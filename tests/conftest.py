@@ -17,8 +17,15 @@ tests/conftest.py
 from __future__ import annotations
 
 import os
+import sys
+import socket
+import threading
+import time
 from pathlib import Path
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Generator, Optional
+
+# Add the project root to sys.path to allow importing main and core
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
@@ -84,6 +91,55 @@ async def app_client() -> AsyncGenerator["httpx.AsyncClient", None]:
         follow_redirects=False,
     ) as client:
         yield client
+
+
+# ───────────────────────────────────────────────────────────────────
+# Live server — uvicorn в фоновом потоке для SSE-тестов.
+# httpx.ASGITransport дедлочится на бесконечных SSE-стримах, поэтому
+# SSE E2E-тесты используют реальный HTTP через localhost.
+# ───────────────────────────────────────────────────────────────────
+@pytest.fixture
+def live_server_url() -> Generator[str, None, None]:
+    """
+    Запускает uvicorn с FastAPI-приложением на случайном свободном порту
+    в daemon-потоке. Ждёт готовности сервера (TCP connect).
+    Yields: строку вида 'http://127.0.0.1:<port>'.
+    """
+    import uvicorn
+    from main import app
+
+    # Найдём свободный порт
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        log_level="error",
+        lifespan="off",
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    # Ждём, пока порт откроется (до 5 секунд)
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                break
+        except OSError:
+            time.sleep(0.05)
+    else:
+        server.should_exit = True
+        raise RuntimeError(f"uvicorn не запустился на порту {port}")
+
+    yield f"http://127.0.0.1:{port}"
+
+    server.should_exit = True
+    thread.join(timeout=3.0)
 
 
 # ───────────────────────────────────────────────────────────────────

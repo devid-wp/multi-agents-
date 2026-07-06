@@ -772,7 +772,7 @@ header#topbar {
   background: rgba(3, 4, 7, 0.75);
   backdrop-filter: blur(8px);
   display: flex; align-items: center; justify-content: center;
-  z-index: 50;
+  z-index: 9999;
   animation: fadeIn 0.12s ease;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -1044,3 +1044,87 @@ header#topbar {
 .muted { color: var(--fg-dim); }
 .upper { text-transform: uppercase; letter-spacing: 0.05em; font-size: 10.5px; }
 .hidden { display: none !important; }
+
+/* ─── Per-Agent Configuration UI ─────────────────────────────────────────── */
+.agents-config-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.agent-config-block {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 14px;
+  transition: border-color 0.2s;
+}
+.agent-config-block:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.agent-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding-bottom: 8px;
+}
+.agent-header h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+}
+.type-toggle {
+  display: flex;
+  gap: 12px;
+}
+.radio-label {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.radio-label input[type="radio"] {
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+.cyber-input, .cyber-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: #080a0f;
+  color: var(--fg);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.cyber-input:focus, .cyber-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(143, 212, 183, 0.25);
+}
+.cyber-select {
+  appearance: none;
+  background-image: url('data:image/svg+xml;charset=US-ASCII,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="gray"><polygon points="4,6 12,6 8,11"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+  cursor: pointer;
+}
+.cyber-select option {
+  background: #080a0f;
+  color: var(--fg);
+}
+.agent-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: slideUp 0.15s ease;
+}
