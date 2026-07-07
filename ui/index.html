@@ -151,25 +151,46 @@
           <div class="agent-config-block" id="config-planner" data-agent="planner">
             <div class="agent-header">
               <h3>[ PLANNER ]</h3>
-              <div class="provider-tabs" data-agent="planner">
-                <button type="button" class="tab-btn" data-provider="gpt">OpenAI</button>
-                <button type="button" class="tab-btn" data-provider="anthropic">Anthropic</button>
-                <button type="button" class="tab-btn active" data-provider="nvidia">NVIDIA NIM</button>
-                <button type="button" class="tab-btn" data-provider="ollama">Ollama</button>
-                <button type="button" class="tab-btn" data-provider="google">Google Gemini</button>
+              <div class="type-toggle">
+                <label class="radio-label"><input type="radio" name="planner_type" value="base" checked> Base</label>
+                <label class="radio-label"><input type="radio" name="planner_type" value="custom"> Custom</label>
               </div>
             </div>
-            <div class="agent-panel">
-              <div class="settings-field api-key-field">
+            
+            <div class="agent-panel base-panel">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="planner_base_provider" class="cyber-select">
+                  <option value="gpt">GPT (OpenAI)</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+              <div class="settings-field">
                 <label>API Key</label>
-                <input type="password" name="planner_api_key" placeholder="API Key" class="cyber-input" autocomplete="new-password">
+                <input type="password" name="planner_base_api_key" placeholder="sk-..." class="cyber-input" autocomplete="new-password">
+              </div>
+            </div>
+
+            <div class="agent-panel custom-panel hidden">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="planner_custom_provider" class="cyber-select">
+                  <option value="nvidia">NVIDIA NIM</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="google">Google Gemini</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="planner_custom_api_key" placeholder="nvapi-..." class="cyber-input" autocomplete="new-password">
               </div>
               <div class="settings-row">
-                <div class="settings-field url-field">
+                <div class="settings-field">
                   <label>Base URL</label>
                   <input type="text" name="planner_base_url" placeholder="https://..." class="cyber-input">
                 </div>
-                <div class="settings-field model-field">
+                <div class="settings-field">
                   <label>Model Name</label>
                   <input type="text" name="planner_model_name" placeholder="model-id" class="cyber-input">
                 </div>
@@ -181,25 +202,46 @@
           <div class="agent-config-block" id="config-executor" data-agent="executor">
             <div class="agent-header">
               <h3>[ EXECUTOR ]</h3>
-              <div class="provider-tabs" data-agent="executor">
-                <button type="button" class="tab-btn" data-provider="gpt">OpenAI</button>
-                <button type="button" class="tab-btn" data-provider="anthropic">Anthropic</button>
-                <button type="button" class="tab-btn" data-provider="nvidia">NVIDIA NIM</button>
-                <button type="button" class="tab-btn active" data-provider="ollama">Ollama</button>
-                <button type="button" class="tab-btn" data-provider="google">Google Gemini</button>
+              <div class="type-toggle">
+                <label class="radio-label"><input type="radio" name="executor_type" value="base"> Base</label>
+                <label class="radio-label"><input type="radio" name="executor_type" value="custom" checked> Custom</label>
               </div>
             </div>
-            <div class="agent-panel">
-              <div class="settings-field api-key-field">
+            
+            <div class="agent-panel base-panel hidden">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="executor_base_provider" class="cyber-select">
+                  <option value="gpt">GPT (OpenAI)</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+              <div class="settings-field">
                 <label>API Key</label>
-                <input type="password" name="executor_api_key" placeholder="API Key" class="cyber-input" autocomplete="new-password">
+                <input type="password" name="executor_base_api_key" placeholder="sk-..." class="cyber-input" autocomplete="new-password">
+              </div>
+            </div>
+
+            <div class="agent-panel custom-panel">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="executor_custom_provider" class="cyber-select">
+                  <option value="ollama">Ollama</option>
+                  <option value="nvidia">NVIDIA NIM</option>
+                  <option value="google">Google Gemini</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="executor_custom_api_key" placeholder="Optional for Ollama" class="cyber-input" autocomplete="new-password">
               </div>
               <div class="settings-row">
-                <div class="settings-field url-field">
+                <div class="settings-field">
                   <label>Base URL</label>
                   <input type="text" name="executor_base_url" placeholder="http://localhost:11434" class="cyber-input">
                 </div>
-                <div class="settings-field model-field">
+                <div class="settings-field">
                   <label>Model Name</label>
                   <input type="text" name="executor_model_name" placeholder="qwen2.5-coder" class="cyber-input">
                 </div>
@@ -211,25 +253,46 @@
           <div class="agent-config-block" id="config-critic" data-agent="critic">
             <div class="agent-header">
               <h3>[ CRITIC ]</h3>
-              <div class="provider-tabs" data-agent="critic">
-                <button type="button" class="tab-btn" data-provider="gpt">OpenAI</button>
-                <button type="button" class="tab-btn" data-provider="anthropic">Anthropic</button>
-                <button type="button" class="tab-btn active" data-provider="nvidia">NVIDIA NIM</button>
-                <button type="button" class="tab-btn" data-provider="ollama">Ollama</button>
-                <button type="button" class="tab-btn" data-provider="google">Google Gemini</button>
+              <div class="type-toggle">
+                <label class="radio-label"><input type="radio" name="critic_type" value="base" checked> Base</label>
+                <label class="radio-label"><input type="radio" name="critic_type" value="custom"> Custom</label>
               </div>
             </div>
-            <div class="agent-panel">
-              <div class="settings-field api-key-field">
+            
+            <div class="agent-panel base-panel">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="critic_base_provider" class="cyber-select">
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gpt">GPT (OpenAI)</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+              <div class="settings-field">
                 <label>API Key</label>
-                <input type="password" name="critic_api_key" placeholder="API Key" class="cyber-input" autocomplete="new-password">
+                <input type="password" name="critic_base_api_key" placeholder="sk-..." class="cyber-input" autocomplete="new-password">
+              </div>
+            </div>
+
+            <div class="agent-panel custom-panel hidden">
+              <div class="settings-field">
+                <label>Provider</label>
+                <select name="critic_custom_provider" class="cyber-select">
+                  <option value="nvidia">NVIDIA NIM</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="google">Google Gemini</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label>API Key</label>
+                <input type="password" name="critic_custom_api_key" placeholder="nvapi-..." class="cyber-input" autocomplete="new-password">
               </div>
               <div class="settings-row">
-                <div class="settings-field url-field">
+                <div class="settings-field">
                   <label>Base URL</label>
                   <input type="text" name="critic_base_url" placeholder="https://..." class="cyber-input">
                 </div>
-                <div class="settings-field model-field">
+                <div class="settings-field">
                   <label>Model Name</label>
                   <input type="text" name="critic_model_name" placeholder="model-id" class="cyber-input">
                 </div>
