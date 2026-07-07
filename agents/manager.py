@@ -102,17 +102,21 @@ class AgentManager:
     # ──────────────────────────────────────────────────────────────
     def readiness_report(self) -> dict:
         """Возвращает, какие компоненты готовы к работе."""
+        exec_cfg = self.creds.executor
         return {
-            "planner_configured": bool(self.creds.planner and self.creds.planner.api_key),
-            "critic_configured": bool(self.creds.critic and self.creds.critic.api_key),
-            "ollama_configured": bool(self.creds.executor and self.creds.executor.provider == "ollama"),
-            "planner_model": self.planner.MODEL_NAME,
-            "critic_model": self.critic.MODEL_NAME,
-            "executor_model": self.executor.MODEL_NAME,
+            "planner_configured":  bool(self.creds.planner and (self.creds.planner.api_key or self.creds.planner.provider == "ollama")),
+            "critic_configured":   bool(self.creds.critic  and (self.creds.critic.api_key  or self.creds.critic.provider  == "ollama")),
+            "executor_configured": bool(exec_cfg),
+            "executor_provider":   exec_cfg.provider if exec_cfg else "none",
+            # backward-compat key (UI ещё может его читать)
+            "ollama_configured":   bool(exec_cfg and exec_cfg.provider == "ollama"),
+            "planner_model":    self.planner.MODEL_NAME,
+            "critic_model":     self.critic.MODEL_NAME,
+            "executor_model":   self.executor.MODEL_NAME,
             "planner_base_url": self.creds.planner.base_url if self.creds.planner else "",
-            "critic_base_url": self.creds.critic.base_url if self.creds.critic else "",
+            "critic_base_url":  self.creds.critic.base_url  if self.creds.critic  else "",
             "planner_model_url": None,
-            "critic_model_url": None,
+            "critic_model_url":  None,
         }
 
     # ──────────────────────────────────────────────────────────────

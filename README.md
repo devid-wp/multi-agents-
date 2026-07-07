@@ -3,13 +3,14 @@
 Мульти-агентная система на FastAPI, состоящая из трёх специализированных агентов,
 которые совместно решают задачи разработки: **планируют → критикуют → исполняют**.
 
-| Агент        | Модель                                          | Роль                            |
-|--------------|-------------------------------------------------|---------------------------------|
-| PlannerAgent | NVIDIA: `abacusai/dracarys-llama-3.1-70b-instruct` | Стратегическое планирование    |
-| CriticAgent  | NVIDIA: `google/gemma-2-27b-it`                 | Ревью и отбраковка планов        |
-| ExecutorAgent| Ollama: `qwen2.5-coder`                          | Исполнение кода и работа с файлами |
+| Агент         | Провайдер (по умолчанию)                            | Роль                                   |
+|---------------|------------------------------------------------------|----------------------------------------|
+| PlannerAgent  | NVIDIA NIM: `abacusai/dracarys-llama-3.1-70b-instruct` | Стратегическое планирование           |
+| CriticAgent   | NVIDIA NIM: `google/gemma-2-27b-it`                  | Ревью и отбраковка планов              |
+| ExecutorAgent | Ollama / NVIDIA / OpenAI-compatible (настраивается)  | Исполнение кода и работа с файлами    |
 
-Все агенты связаны через `AgentManager`, и ExecutorAgent работает в **песочнице**
+Каждый агент конфигурируется **независимо**: свой провайдер, API-ключ, base URL и имя модели.
+Все агенты связаны через `AgentManager`; ExecutorAgent работает в **песочнице**
 (`tools/file_tool.py` блокирует выход за пределы `WORKSPACE_DIR` через `Path.resolve()`).
 
 ---
@@ -19,53 +20,82 @@
 ```
 multi_agents/
 ├── main.py                  # FastAPI entry-point
+├── start.ps1                # 🪟 Windows PowerShell — быстрый старт
+├── start.sh                 # 🐧 Arch/Linux — быстрый старт
 ├── install.sh               # Установщик для Arch Linux (pacman + venv)
 ├── requirements.txt
 ├── systemd/
 │   └── trinity.service      # Пользовательский systemd-юнит
 ├── core/                    # Ядро: конфиг, LLM-клиенты, сессии
+│   ├── llm_clients.py       # NvidiaClient, OllamaClient, OpenAICompatibleClient
+│   └── models.py            # Pydantic-модели (ChatRequest, strategy и др.)
 ├── agents/                  # Planner, Critic, Executor, Manager
+│   └── manager.py           # run_task(strategy="auto|planner|direct")
 ├── tools/                   # Cline-подобные инструменты (file, bash)
-├── static/ + templates/     # UI (ChatGPT-подобный чат)
-└── tests/                   # pytest
+├── ui/                      # Mission Control UI
+│   ├── index.html
+│   └── static/
+│       ├── app.js           # Роутинг стратегий, SSE-обработчик
+│       └── styles.css
+├── static/ + templates/     # Legacy UI (обратная совместимость)
+└── tests/                   # pytest (e2e)
 ```
 
 ---
 
-## Быстрый старт (Arch Linux)
+## Быстрый старт — Windows
 
-```bash
-# 1. Клонируем и ставим зависимости
-git clone <repo> ~/Projects/multi_agents
-cd ~/Projects/multi_agents
-chmod +x install.sh
-./install.sh                 # sudo pacman + venv + .env
+```powershell
+# Запустить PowerShell в корне проекта
 
-# 2. (опционально) редактируем .env — но в проде ключи идут через форму
-$EDITOR .env
+# Разрешить запуск скриптов (один раз)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
-# 3. Включаем пользовательский сервис systemd
-mkdir -p ~/.config/systemd/user
-cp systemd/trinity.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now trinity.service
+# Старт: создаст venv, поставит deps, запустит сервер
+.\start.ps1
 
-# 4. Чтобы демон жил после logout
-sudo loginctl enable-linger $USER
-
-# 5. Проверка
-systemctl --user status trinity
-journalctl --user -u trinity -f
-curl http://127.0.0.1:8000/api/health
+# Параметры:
+.\start.ps1 -Port 9000          # другой порт
+.\start.ps1 -SkipOllama         # не запускать Ollama
+.\start.ps1 -NoDev              # production (без --reload)
 ```
 
-Откройте `http://127.0.0.1:8000` и введите API-ключи NVIDIA в форме настроек.
+Откройте `http://localhost:8000/ui/` и настройте провайдеры в ⚙️ Settings.
 
-### Альтернатива: запуск вручную
+---
+
+## Быстрый старт — Arch Linux / Linux
 
 ```bash
-source .venv/bin/activate
-uvicorn main:app --host 0.0.0.0 --port 8000
+# 1. Клонируем
+git clone <repo> ~/Projects/multi_agents
+cd ~/Projects/multi_agents
+chmod +x start.sh
+./start.sh             # создаст venv, депс, запустит сервер
+
+# Или через systemd:
+cp systemd/trinity.service ~/.config/systemd/user/
+systemctl --user enable --now trinity.service
+sudo loginctl enable-linger $USER    # жить после logout
+```
+
+Откройте `http://127.0.0.1:8000/ui/` и настройте провайдеры в ⚙️ Settings.
+
+---
+
+## Стратегии маршрутизации
+
+Выбор режима — кнопками в топбаре UI или полем `strategy` в API:
+
+| Кнопка | `strategy` | Режим |
+|---------|------------|-------|
+| 🧠 **Planner** | `planner` | Только план: Planner → Critic. Executor **не** запускается. |
+| ⚡ **Critic** | `auto` | Полный цикл: Plan → Review → Execute (дефолт). |
+| ⚙️ **Executor** | `direct` | В обход Planner/Critic — задача сразу к Executor. |
+
+```json
+// POST /api/chat
+{ "message": "Напиши hello.py", "strategy": "direct" }
 ```
 
 ---
@@ -77,17 +107,18 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 | Переменная             | Назначение                                              | Обязательность |
 |------------------------|---------------------------------------------------------|----------------|
 | `SESSION_SECRET`       | Секрет подписи cookie (itsdangerous)                    | **обязательно сменить в проде** |
-| `WORKSPACE_DIR`        | Песочница ExecutorAgent (sandbox)                       | опционально (`.`) |
-| `LLM_TIMEOUT_SECONDS`  | Таймаут HTTP-запросов к LLM                             | опционально (`120`) |
-| `MAX_ITERATIONS`       | Макс. итераций Planner↔Critic                           | опционально (`5`) |
-| `PLANNER_BASE_URL`     | Базовый URL NVIDIA NIM для Planner                      | опционально |
-| `CRITIC_BASE_URL`      | Базовый URL NVIDIA NIM для Critic                       | опционально |
-| `PLANNER_MODEL`        | Имя модели Planner                                      | опционально |
-| `CRITIC_MODEL`         | Имя модели Critic                                       | опционально |
-| `EXECUTOR_MODEL`       | Имя модели Executor (Ollama)                            | опционально |
-| `PLANNER_API_KEY`      | Ключ NVIDIA для Planner *(только для локальной разработки)* | в проде — через форму |
-| `CRITIC_API_KEY`       | Ключ NVIDIA для Critic *(только для локальной разработки)*  | в проде — через форму |
-| `OLLAMA_URL`           | Адрес локального Ollama                                 | опционально (`http://localhost:11434`) |
+| `WORKSPACE_DIR`        | Песочница ExecutorAgent (sandbox)                        | опционально (`.`) |
+| `LLM_TIMEOUT_SECONDS`  | Таймаут HTTP-запросов к LLM                              | опционально (`120`) |
+| `MAX_ITERATIONS`       | Макс. итераций Planner↔Critic                            | опционально (`5`) |
+| `PLANNER_BASE_URL`     | Базовый URL для Planner (NVIDIA NIM / OpenAI-compat)     | опционально |
+| `CRITIC_BASE_URL`      | Базовый URL для Critic                                   | опционально |
+| `EXECUTOR_BASE_URL`    | Базовый URL для Executor (Ollama / NVIDIA / любой)       | опционально |
+| `PLANNER_MODEL`        | Имя модели Planner                                       | опционально |
+| `CRITIC_MODEL`         | Имя модели Critic                                        | опционально |
+| `EXECUTOR_MODEL`       | Имя модели Executor                                      | опционально |
+| `PLANNER_API_KEY`      | API-ключ Planner *(лок. разработка)*                         | в проде — через форму |
+| `CRITIC_API_KEY`       | API-ключ Critic *(лок. разработка)*                          | в проде — через форму |
+| `OLLAMA_URL`           | Адрес локального Ollama                                  | опционально (`http://localhost:11434`) |
 
 ⚠️ **Безопасность**: `.env` лежит в `.gitignore` и не должен попадать в репозиторий.
 В продакшне API-ключи рекомендуется вводить через UI — они хранятся в
