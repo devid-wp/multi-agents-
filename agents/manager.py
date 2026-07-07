@@ -121,10 +121,14 @@ class AgentManager:
     async def run_task(
         self,
         user_task: str,
+        strategy: str = "auto",
     ) -> AsyncGenerator[ProgressEvent, None]:
         """
-        Оркестрирует Planner → Critic ↔ Planner → Executor.
-        Отдаёт наружу поток ProgressEvent для SSE.
+        Оркестрирует агентов согласно стратегии:
+
+          auto    (дефолт) — Planner → Critic ↔ Planner → Executor.
+          planner — только планирование; Executor не запускается.
+          direct  — сразу к Executor (без Planner/Critic).
 
         Гарантии устойчивости:
           • Любой LLMError / TypeError / AttributeError / ValueError,
@@ -158,18 +162,71 @@ class AgentManager:
             return str(content).strip()
 
         try:
+            # Объявляем выбранную стратегию
+            effective_strategy = strategy if strategy in ("auto", "planner", "direct") else "auto"
+            yield ProgressEvent(
+                kind="strategy",
+                agent=AgentName.MANAGER,
+                content=effective_strategy,
+            )
+
             # Преамбула
             yield ProgressEvent(
                 kind="info",
                 agent=AgentName.MANAGER,
-                content=f"🚀 Получена задача: {(user_task or '')[:200]}",
+                content=f"🚀 Получена задача [{effective_strategy.upper()}]: {(user_task or '')[:200]}",
             )
 
             if not self._nvidia and not self._ollama:
+                # Дополнительная проверка: если llm_client задан напрямую в агентах — разрешаем
+                has_any_client = (
+                    getattr(self.planner, "_llm_client", None)
+                    or getattr(self.executor, "_llm_client", None)
+                    or getattr(self.critic, "_llm_client", None)
+                )
+                if not has_any_client:
+                    yield ProgressEvent(
+                        kind="error",
+                        agent=AgentName.MANAGER,
+                        content="Не сконфигурирован ни один LLM-провайдер. Заполните форму.",
+                    )
+                    return
+
+            # ── Стратегия DIRECT: сразу к Executor ────────────────────
+            if effective_strategy == "direct":
                 yield ProgressEvent(
-                    kind="error",
+                    kind="info",
                     agent=AgentName.MANAGER,
-                    content="Не сконфигурирован ни один LLM-провайдер. Заполните форму.",
+                    content="⚡ Режим DIRECT: передаю задачу напрямую Executor.",
+                )
+                try:
+                    final = await self.executor.run(
+                        ctx_factory(
+                            f"Задача пользователя: {user_task}\n\n"
+                            "Выполни её напрямую, используя доступные инструменты.",
+                            history=[],
+                        )
+                    )
+                except LLMError as e:
+                    yield ProgressEvent(kind="error", agent=AgentName.MANAGER, content=str(e))
+                    return
+                except Exception as e:  # noqa: BLE001
+                    log.exception("executor.run() crashed (direct mode)")
+                    yield ProgressEvent(
+                        kind="error",
+                        agent=AgentName.MANAGER,
+                        content=f"Executor упал: {e}",
+                    )
+                    return
+                # Сливаем накопленные события
+                while not event_q.empty():
+                    try:
+                        yield event_q.get_nowait()
+                    except Exception:  # noqa: BLE001
+                        break
+                final_content = getattr(final, "content", None) or "(пустой результат)"
+                yield ProgressEvent(
+                    kind="final", agent=AgentName.EXECUTOR, content=final_content
                 )
                 return
 
@@ -349,7 +406,17 @@ class AgentManager:
                     log.warning("failed to drain event_q: %s", e)
                     break
 
-            # ── Шаг 3: Executor выполняет одобренный план ─────────
+            # ── Шаг 3: Executor выполняет одобренный план (только для auto) ──
+            if effective_strategy == "planner":
+                # Режим PLANNER: возвращаем только готовый план
+                yield ProgressEvent(
+                    kind="final",
+                    agent=AgentName.PLANNER,
+                    content=plan_text,
+                )
+                return
+
+            # Авто-режим: запускаем Executor
             try:
                 final = await self.executor.run(
                     ctx_factory(

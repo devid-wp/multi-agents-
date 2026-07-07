@@ -311,16 +311,37 @@ class Agent(abc.ABC):
             # Собираем tool-calls (либо нативные, либо распарсенные из JSON)
             native_calls = response.tool_calls or []
             if native_calls:
-                tc_objs = [
-                    ToolCall(
-                        id=c.get("id") or ToolCall(id=str(i)).id,
-                        name=c["function"]["name"],
-                        arguments=json.loads(c["function"]["arguments"])
-                        if isinstance(c["function"].get("arguments"), str)
-                        else c["function"].get("arguments", {}),
-                    )
-                    for i, c in enumerate(native_calls)
-                ]
+                # Нормализуем нативный формат:
+                # • NVIDIA NIM / OpenAI: arguments — JSON-строка
+                # • Ollama: arguments — уже dict
+                # Оба случая приводим к ToolCall(name, arguments: dict)
+                tc_objs = []
+                for i, c in enumerate(native_calls):
+                    if not isinstance(c, dict):
+                        log.warning("native tool_call is not a dict: %r — skipping", c)
+                        continue
+                    fn = c.get("function") or {}
+                    name = fn.get("name") or c.get("name")
+                    if not name:
+                        log.warning("native tool_call has no name: %r — skipping", c)
+                        continue
+                    raw_args = fn.get("arguments") or c.get("arguments") or {}
+                    if isinstance(raw_args, str):
+                        try:
+                            args = json.loads(raw_args)
+                        except json.JSONDecodeError:
+                            log.warning(
+                                "tool_call '%s': could not parse arguments JSON %r",
+                                name, raw_args,
+                            )
+                            args = {"raw": raw_args}
+                    else:
+                        args = raw_args if isinstance(raw_args, dict) else {}
+                    tc_objs.append(ToolCall(
+                        id=c.get("id") or f"call_{i}",
+                        name=name,
+                        arguments=args,
+                    ))
             else:
                 tc_objs = self.parse_json_tool_calls(response.content)
 

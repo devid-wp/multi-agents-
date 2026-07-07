@@ -308,7 +308,7 @@ async def chat(request: Request, payload: ChatRequest):
         # корректно завершается — даже если менеджер вернёт None,
         # упадёт с исключением или клиент отвалится посреди итерации.
         try:
-            gen = manager.run_task(payload.message)
+            gen = manager.run_task(payload.message, strategy=payload.strategy or "auto")
             while True:
                 try:
                     ev = await gen.__anext__()
