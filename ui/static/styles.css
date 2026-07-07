@@ -428,6 +428,55 @@ header#topbar {
   50% { transform: scale(1.15); opacity: 1; }
 }
 
+/* ── Strategy badge ─────────────────────────────────────────────── */
+.strategy-badge {
+  --strategy-color: #a78bfa;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--strategy-color) 40%, transparent);
+  background: color-mix(in srgb, var(--strategy-color) 10%, transparent);
+  color: var(--strategy-color);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background 0.35s ease, border-color 0.35s ease, color 0.35s ease;
+  white-space: nowrap;
+  margin-left: 8px;
+}
+
+#strategy-badge-icon {
+  font-size: 0.9rem;
+}
+
+/* Agent button glows with strategy color when active */
+.agent-btn.active {
+  background: rgba(143,212,183,0.12);
+  border-color: rgba(143,212,183,0.24);
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(143,212,183,0.15);
+}
+
+/* Strategy-specific active btn accent colours */
+.agent-btn[data-strategy="planner"].active {
+  background: rgba(167,139,250,0.14);
+  border-color: rgba(167,139,250,0.30);
+  box-shadow: 0 0 10px rgba(167,139,250,0.18);
+}
+.agent-btn[data-strategy="auto"].active {
+  background: rgba(52,211,153,0.14);
+  border-color: rgba(52,211,153,0.30);
+  box-shadow: 0 0 10px rgba(52,211,153,0.18);
+}
+.agent-btn[data-strategy="direct"].active {
+  background: rgba(249,115,22,0.14);
+  border-color: rgba(249,115,22,0.30);
+  box-shadow: 0 0 10px rgba(249,115,22,0.18);
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;

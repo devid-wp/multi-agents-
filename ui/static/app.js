@@ -46,6 +46,7 @@
       diagnostics: null,
     },
     selectedAgent: "planner",
+    selectedStrategy: "planner",  // matches first active agent-btn
     activeAgent: null,
     toolState: {
       current: null,
@@ -816,7 +817,7 @@
     // user message bubble
     renderBridgeEvent({ kind: "user", agent: "user", content: text, timestamp: Date.now() / 1000 });
 
-    const payload = { message: text };
+    const payload = { message: text, strategy: state.selectedStrategy || "auto" };
     const creds = buildEphemeralCreds();
     if (creds) payload.ephemeral_credentials = creds;
 
@@ -836,6 +837,11 @@
       }
       if (ev.kind === "tool_execution") {
         addDiagnosticEntry(ev);
+      }
+      if (ev.kind === "strategy") {
+        // Сервер подтвердил выбранную стратегию
+        setActiveStrategy(ev.content);
+        return;
       }
       if (ev.kind === "agent_start" && ev.agent) {
         updateAgentIndicatorState(ev.agent, "working");
@@ -894,6 +900,24 @@
     $$(".agent-btn").forEach((btn) => btn.classList.toggle("active", btn.dataset.agent === agent));
   }
 
+  // ── Strategy routing ────────────────────────────────────────────
+  const STRATEGY_META = {
+    planner: { icon: "\uD83E\uDDE0", label: "planner",  color: "#a78bfa" },
+    auto:    { icon: "\u26A1",       label: "auto",     color: "#34d399" },
+    direct:  { icon: "\u2699\uFE0F", label: "direct",   color: "#f97316" },
+  };
+
+  function setActiveStrategy(strategy) {
+    state.selectedStrategy = strategy || "auto";
+    const meta = STRATEGY_META[state.selectedStrategy] || STRATEGY_META.auto;
+    const icon  = document.getElementById("strategy-badge-icon");
+    const label = document.getElementById("strategy-badge-label");
+    const badge = document.getElementById("strategy-badge");
+    if (icon)  icon.textContent  = meta.icon;
+    if (label) label.textContent = meta.label;
+    if (badge) badge.style.setProperty("--strategy-color", meta.color);
+  }
+
   // ════════════════════════════════════════════════════
   // 10. boot()
   // ════════════════════════════════════════════════════════════
@@ -930,14 +954,22 @@
       }
     });
 
-    // Agent buttons
+    // Agent buttons — switch strategy + highlight
     $$(".agent-btn").forEach((button) => {
       button.addEventListener("click", () => {
-        const agent = button.dataset.agent;
+        const agent    = button.dataset.agent;
+        const strategy = button.dataset.strategy || "auto";
         if (!agent) return;
+        setActiveAgentButton(agent);
+        setActiveStrategy(strategy);
+        state.selectedAgent = agent;
+        // Also call switchAgent to keep backend ACTIVE_AGENT in sync
         void switchAgent(agent);
       });
     });
+    // Init badge from default active button
+    const defaultBtn = $(".agent-btn.active");
+    if (defaultBtn) setActiveStrategy(defaultBtn.dataset.strategy || "auto");
     await refreshActiveAgent();
 
     // Sidebar toggle

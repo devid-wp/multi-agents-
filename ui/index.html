@@ -53,15 +53,19 @@
       <button id="btn-sidebar-toggle" class="icon-btn" title="Toggle workspace panel">☰</button>
       <span class="logo">⬢ Trinity</span>
       <div class="agent-toolbar">
-        <button type="button" class="agent-btn active status-ready" data-agent="planner">
+        <button type="button" class="agent-btn active status-ready" data-agent="planner" data-strategy="planner" title="Planner only — plan without executing">
           <span class="status-dot"></span>Planner
         </button>
-        <button type="button" class="agent-btn status-ready" data-agent="critic">
+        <button type="button" class="agent-btn status-ready" data-agent="critic" data-strategy="auto" title="Auto — full pipeline: Plan → Review → Execute">
           <span class="status-dot"></span>Critic
         </button>
-        <button type="button" class="agent-btn status-ready" data-agent="executor">
+        <button type="button" class="agent-btn status-ready" data-agent="executor" data-strategy="direct" title="Direct — skip planning, run Executor immediately">
           <span class="status-dot"></span>Executor
         </button>
+      </div>
+      <div id="strategy-badge" class="strategy-badge" title="Active routing strategy">
+        <span id="strategy-badge-icon">🧠</span>
+        <span id="strategy-badge-label">planner</span>
       </div>
       <div class="topbar-meta">
         <div id="tool-status" class="tool-status-pill idle">Tool lifecycle: idle</div>
