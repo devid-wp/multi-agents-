@@ -281,58 +281,61 @@
   }
 
   // ── Provider tab switching ─────────────────────────────────────
-  // Event listeners for radio toggles
-  document.querySelectorAll('input[type="radio"][name$="_type"]').forEach(radio => {
-    radio.addEventListener('change', (e) => {
-      const agent = e.target.name.split('_')[0]; // "planner", "executor", "critic"
-      const type = e.target.value; // "base" or "custom"
-      
-      const block = document.getElementById(`config-${agent}`);
-      if (!block) return;
-      
-      const basePanel = block.querySelector('.base-panel');
-      const customPanel = block.querySelector('.custom-panel');
-      
-      if (type === 'base') {
-        basePanel.classList.remove('hidden');
-        customPanel.classList.add('hidden');
-      } else {
-        basePanel.classList.add('hidden');
-        customPanel.classList.remove('hidden');
-      }
-    });
-  });
-
-  // Event listeners for custom provider dropdowns to hide API key for Ollama
-  // and auto-fill Base URL default value
   const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
   const DEFAULT_NVIDIA_URL = 'https://integrate.api.nvidia.com/v1';
 
-  function applyProviderVisibility(sel) {
-    const agentName = sel.name.split('_')[0];
-    const isOllama = sel.value === 'ollama';
+  function applyProviderVisibility(agentName, provider) {
+    const block = document.getElementById(`config-${agentName}`);
+    if (!block) return;
 
-    // Show/hide API Key field
-    const apiKeyInput = document.querySelector(`input[name="${agentName}_custom_api_key"]`);
-    if (apiKeyInput) {
-      const field = apiKeyInput.closest('.settings-field');
-      if (field) field.style.display = isOllama ? 'none' : '';
-    }
+    const apiKeyField = block.querySelector('.api-key-field');
+    const urlField = block.querySelector('.url-field');
+    const modelField = block.querySelector('.model-field');
+    const baseUrlInput = block.querySelector(`input[name="${agentName}_base_url"]`);
+    const modelInput = block.querySelector(`input[name="${agentName}_model_name"]`);
 
-    // Auto-fill Base URL if empty or switching defaults
-    const baseUrlInput = document.querySelector(`input[name="${agentName}_base_url"]`);
-    if (baseUrlInput) {
-      const current = baseUrlInput.value.trim();
-      const isDefaultLike = !current || current === DEFAULT_OLLAMA_URL || current === DEFAULT_NVIDIA_URL;
-      if (isDefaultLike) {
-        baseUrlInput.value = isOllama ? DEFAULT_OLLAMA_URL : DEFAULT_NVIDIA_URL;
+    // Default visibility
+    if (apiKeyField) apiKeyField.style.display = '';
+    if (urlField) urlField.style.display = 'none';
+    if (modelField) modelField.style.display = 'none';
+
+    // Provider specific
+    if (provider === 'google') {
+      if (modelField) modelField.style.display = '';
+      if (modelInput && !modelInput.value) modelInput.value = 'gemini-1.5-pro';
+      if (urlField) urlField.style.display = 'none'; // Ensure hidden
+    } else if (provider === 'ollama') {
+      if (apiKeyField) apiKeyField.style.display = 'none';
+      if (urlField) urlField.style.display = '';
+      if (modelField) modelField.style.display = '';
+      if (baseUrlInput) {
+        const current = baseUrlInput.value.trim();
+        if (!current || current === DEFAULT_NVIDIA_URL) baseUrlInput.value = DEFAULT_OLLAMA_URL;
+      }
+    } else if (provider === 'nvidia') {
+      if (urlField) urlField.style.display = '';
+      if (modelField) modelField.style.display = '';
+      if (baseUrlInput) {
+        const current = baseUrlInput.value.trim();
+        if (!current || current === DEFAULT_OLLAMA_URL) baseUrlInput.value = DEFAULT_NVIDIA_URL;
       }
     }
   }
 
-  document.querySelectorAll('select[name$="_custom_provider"]').forEach(select => {
-    applyProviderVisibility(select);
-    select.addEventListener('change', (e) => applyProviderVisibility(e.target));
+  document.querySelectorAll('.provider-tabs').forEach(tabContainer => {
+    const agentName = tabContainer.dataset.agent;
+    const buttons = tabContainer.querySelectorAll('.tab-btn');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        // Remove active class from all
+        buttons.forEach(b => b.classList.remove('active'));
+        // Add active class to clicked
+        const target = e.currentTarget;
+        target.classList.add('active');
+        
+        applyProviderVisibility(agentName, target.dataset.provider);
+      });
+    });
   });
 
   // ── Modal open / close ─────────────────────────────────────────
@@ -355,36 +358,21 @@
     
     const pop = (agentName) => {
       const cfg = s[agentName] || {};
-      // "nvidia" and "ollama" fall under Custom. Standard ones fall under Base.
-      const isCustom = ["nvidia", "ollama"].includes(cfg.provider);
-      const radioName = `${agentName}_type`;
+      const provider = cfg.provider || "gpt";
       
-      if (f.elements[radioName]) {
-        // Trigger UI toggle
-        const radios = Array.from(f.elements[radioName]);
-        const targetRadio = radios.find(r => r.value === (isCustom ? "custom" : "base"));
-        if (targetRadio) {
-          targetRadio.checked = true;
-          targetRadio.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+      const tabContainer = document.querySelector(`.provider-tabs[data-agent="${agentName}"]`);
+      if (tabContainer) {
+        const buttons = tabContainer.querySelectorAll('.tab-btn');
+        buttons.forEach(b => b.classList.remove('active'));
+        const activeBtn = tabContainer.querySelector(`.tab-btn[data-provider="${provider}"]`);
+        if (activeBtn) activeBtn.classList.add('active');
       }
+
+      if (f.elements[`${agentName}_base_url`]) f.elements[`${agentName}_base_url`].value = cfg.base_url || "";
+      if (f.elements[`${agentName}_model_name`]) f.elements[`${agentName}_model_name`].value = cfg.model_name || "";
+      if (f.elements[`${agentName}_api_key`]) f.elements[`${agentName}_api_key`].value = ""; // clear password
       
-      if (isCustom) {
-        const providerSel = f.elements[`${agentName}_custom_provider`];
-        if (providerSel) {
-          providerSel.value = cfg.provider || "nvidia";
-          // Re-trigger visibility so API key is hidden for Ollama right away
-          applyProviderVisibility(providerSel);
-        }
-        if (f.elements[`${agentName}_base_url`]) f.elements[`${agentName}_base_url`].value = cfg.base_url || "";
-        if (f.elements[`${agentName}_model_name`]) f.elements[`${agentName}_model_name`].value = cfg.model_name || "";
-      } else {
-        if (f.elements[`${agentName}_base_provider`]) f.elements[`${agentName}_base_provider`].value = cfg.provider || "gpt";
-      }
-      
-      // Clear password fields on open
-      if (f.elements[`${agentName}_base_api_key`]) f.elements[`${agentName}_base_api_key`].value = "";
-      if (f.elements[`${agentName}_custom_api_key`]) f.elements[`${agentName}_custom_api_key`].value = "";
+      applyProviderVisibility(agentName, provider);
     };
     
     pop("planner");
@@ -399,22 +387,28 @@
     const existing = storageLoad();
     
     const getAgentPayload = (agentName) => {
-        const type = fd.get(`${agentName}_type`);
         const oldCfg = existing[agentName] || {};
-        if (type === "base") {
-            const provider = fd.get(`${agentName}_base_provider`);
-            const api_key = fd.get(`${agentName}_base_api_key`) || oldCfg.api_key || null;
-            return { provider, api_key, base_url: null, model_name: null };
-        } else {
-            const provider = fd.get(`${agentName}_custom_provider`);
-            // Ollama is local — it never needs an API key
-            const api_key = provider === 'ollama'
-                ? null
-                : (fd.get(`${agentName}_custom_api_key`) || oldCfg.api_key || null);
-            const base_url = fd.get(`${agentName}_base_url`) || null;
-            const model_name = fd.get(`${agentName}_model_name`) || null;
-            return { provider, api_key, base_url, model_name };
+        
+        const tabContainer = document.querySelector(`.provider-tabs[data-agent="${agentName}"]`);
+        const activeBtn = tabContainer ? tabContainer.querySelector('.tab-btn.active') : null;
+        const provider = activeBtn ? activeBtn.dataset.provider : "gpt";
+        
+        let api_key = fd.get(`${agentName}_api_key`) || oldCfg.api_key || null;
+        let base_url = null;
+        let model_name = null;
+        
+        if (provider === 'google') {
+            model_name = fd.get(`${agentName}_model_name`) || null;
+        } else if (provider === 'ollama') {
+            api_key = null;
+            base_url = fd.get(`${agentName}_base_url`) || null;
+            model_name = fd.get(`${agentName}_model_name`) || null;
+        } else if (provider === 'nvidia') {
+            base_url = fd.get(`${agentName}_base_url`) || null;
+            model_name = fd.get(`${agentName}_model_name`) || null;
         }
+        
+        return { provider, api_key, base_url, model_name };
     };
     
     const payload = {

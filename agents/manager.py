@@ -56,16 +56,23 @@ class AgentManager:
         self.creds = creds
         self.tools = ToolRegistry(workspace=settings.workspace_dir)
 
-        from core.llm_clients import NvidiaClient, OllamaClient, OpenAICompatibleClient
+        from core.llm_clients import NvidiaClient, OllamaClient, OpenAICompatibleClient, GoogleGeminiClient
 
         def _create_client(cfg, agent_name: AgentName):
             if not cfg:
                 return None
-            if cfg.provider == "ollama":
+            
+            provider = cfg.provider.lower() if cfg.provider else ""
+            if provider == "ollama":
                 return OllamaClient(base_url=cfg.base_url or "http://localhost:11434")
-            elif cfg.provider == "nvidia":
+            elif provider == "nvidia":
                 providers = {agent_name: (cfg.api_key or "", cfg.base_url or "", None)}
                 return NvidiaClient(providers=providers)
+            elif provider == "google":
+                from core.llm_clients import LLMError
+                if not cfg.api_key:
+                    raise LLMError(f"API key is missing for Google provider ({agent_name})")
+                return GoogleGeminiClient(api_key=cfg.api_key)
             else:
                 return OpenAICompatibleClient(
                     api_key=cfg.api_key,

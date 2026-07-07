@@ -568,3 +568,162 @@ class OllamaClient(BaseLLMClient):
                             break
             except httpx.HTTPError as e:
                 raise LLMError(f"Ollama stream error: {e}") from e
+
+# ───────────────────────────────────────────────────────────────────
+# Google Gemini Client
+# ───────────────────────────────────────────────────────────────────
+class GoogleGeminiClient(BaseLLMClient):
+    """Клиент для Google AI Studio (Gemini)."""
+
+    def __init__(
+        self,
+        api_key: str,
+        timeout: Optional[float] = None,
+    ) -> None:
+        if not api_key or not api_key.strip():
+            raise LLMError("Google Gemini API key is missing")
+        self.api_key = api_key.strip()
+        self._timeout = timeout or settings.llm_timeout_seconds
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+
+    async def chat(
+        self,
+        *,
+        model: str,
+        messages: List[ChatMessage],
+        temperature: float = 0.6,
+        max_tokens: int = 2048,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        agent: Optional[AgentName] = None,
+    ) -> ChatMessage:
+        # Mapping rules
+        system_instruction = None
+        contents = []
+
+        for m in messages:
+            if m.role == "system":
+                # system messages go to systemInstruction in Gemini
+                if system_instruction is None:
+                    system_instruction = {"parts": [{"text": m.content}]}
+                else:
+                    system_instruction["parts"].append({"text": m.content})
+            elif m.role == "assistant":
+                # assistant -> model
+                parts = []
+                if m.content:
+                    parts.append({"text": m.content})
+                if m.tool_calls:
+                    for tc in m.tool_calls:
+                        # Fallback parsing for tool_calls format (dict or ToolCall obj)
+                        func_name = ""
+                        func_args = {}
+                        if isinstance(tc, dict):
+                            func = tc.get("function", {})
+                            func_name = func.get("name", "")
+                            args_raw = func.get("arguments", {})
+                        else:
+                            func = getattr(tc, "function", None)
+                            if func:
+                                func_name = getattr(func, "name", "")
+                                args_raw = getattr(func, "arguments", {})
+                            else:
+                                continue
+                                
+                        if isinstance(args_raw, str):
+                            try:
+                                func_args = json.loads(args_raw)
+                            except json.JSONDecodeError:
+                                func_args = {}
+                        else:
+                            func_args = args_raw
+
+                        parts.append({
+                            "functionCall": {
+                                "name": func_name,
+                                "args": func_args
+                            }
+                        })
+                if parts:
+                    contents.append({"role": "model", "parts": parts})
+            else:
+                # user
+                contents.append({"role": "user", "parts": [{"text": m.content}]})
+
+        payload: Dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            }
+        }
+
+        if system_instruction:
+            payload["systemInstruction"] = system_instruction
+
+        if tools:
+            # Convert standard OpenAI tools to Gemini format
+            gemini_tools = []
+            for t in tools:
+                if t.get("type") == "function":
+                    func = t.get("function", {})
+                    gemini_tools.append({
+                        "name": func.get("name", ""),
+                        "description": func.get("description", ""),
+                        "parameters": func.get("parameters", {})
+                    })
+            if gemini_tools:
+                payload["tools"] = [{"functionDeclarations": gemini_tools}]
+
+        url = f"{self.base_url}/{model}:generateContent?key={self.api_key}"
+
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            try:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+            except httpx.HTTPError as exc:
+                raise LLMError(f"Google Gemini request failed: {exc}") from exc
+
+        if resp.status_code != 200:
+            raise LLMError(f"Google Gemini API {resp.status_code}: {resp.text[:500]}")
+
+        data = resp.json()
+        
+        try:
+            candidate = data["candidates"][0]
+            parts = candidate["content"]["parts"]
+        except (KeyError, IndexError):
+            # empty response case
+            return ChatMessage(role="assistant", content="", tool_calls=None)
+
+        # Parse text and function calls
+        text = ""
+        tool_calls = []
+
+        for part in parts:
+            if "text" in part:
+                text += part["text"]
+            if "functionCall" in part:
+                fc = part["functionCall"]
+                # For compatibility with Trinity's ToolCall format, wrap it similar to OpenAI
+                args = fc.get("args", {})
+                if isinstance(args, dict):
+                    args_str = json.dumps(args)
+                else:
+                    args_str = str(args)
+                
+                tool_calls.append({
+                    "type": "function",
+                    "function": {
+                        "name": fc.get("name", ""),
+                        "arguments": args_str
+                    }
+                })
+
+        return ChatMessage(
+            role="assistant",
+            content=text,
+            tool_calls=tool_calls if tool_calls else None
+        )

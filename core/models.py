@@ -103,7 +103,7 @@ class ToolResult(BaseModel):
 # Запросы / ответы FastAPI
 # ───────────────────────────────────────────────────────────────────
 class AgentProviderConfig(BaseModel):
-    provider: str
+    provider: Literal["nvidia", "ollama", "gpt", "anthropic", "google"]
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     model_name: Optional[str] = None
