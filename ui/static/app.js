@@ -531,6 +531,8 @@
   const chatContainerEl = $("#chat-container");
   const chatInput       = $("#chat-input");
   const sendBtn         = $("#send-btn");
+  const stopBtn         = $("#stop-btn");
+  const skeletonEl      = $("#executor-skeleton");
   const diagnosticsListEl = $("#diagnostics-list");
   const diagnosticsStatusEl = $("#diagnostics-status");
   const toolStatusEl = $("#tool-status");
@@ -543,6 +545,22 @@
     state.running = running;
     sendBtn.disabled = running;
     chatInput.disabled = running;
+    // Toggle send ↔ stop button
+    if (running) {
+      sendBtn.classList.add("hidden");
+      stopBtn.classList.remove("hidden");
+    } else {
+      stopBtn.classList.add("hidden");
+      sendBtn.classList.remove("hidden");
+      hideSkeleton();
+    }
+  }
+
+  function showSkeleton() {
+    if (skeletonEl) skeletonEl.classList.remove("hidden");
+  }
+  function hideSkeleton() {
+    if (skeletonEl) skeletonEl.classList.add("hidden");
   }
 
   function updateToolLifecycleState(status, detail, toolName = null) {
@@ -892,6 +910,11 @@
       ev.timestamp = ev.timestamp || Date.now() / 1000;
       renderBridgeEvent(ev);
 
+      // Show executor skeleton while executor is working
+      if (ev.kind === "agent_start" && ev.agent === "executor") showSkeleton();
+      if ((ev.kind === "agent_done" && ev.agent === "executor") ||
+           ev.kind === "final" || ev.kind === "error") hideSkeleton();
+
       if (ev.kind === "tool_call" && ev.tool) {
         updateToolLifecycleState("executing", `Calling ${ev.tool.name}`, ev.tool.name);
         addDiagnosticEntry(ev);
@@ -997,6 +1020,9 @@
     // Gear button
     const btnSettings = $("#btn-settings");
     if (btnSettings) btnSettings.addEventListener("click", openSettings);
+
+    // Stop button
+    if (stopBtn) stopBtn.addEventListener("click", stopChat);
     // Provider tabs
     $$("[data-provider]").forEach((btn) => {
       btn.addEventListener("click", () => setActiveProvider(btn.dataset.provider));

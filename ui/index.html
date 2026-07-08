@@ -88,6 +88,18 @@
       <div id="chat-container" class="chat-container log-panel bg-[#0f0f0f] text-[#ececec]">
         <div class="log-header">Agent stream</div>
       </div>
+      <div id="executor-skeleton" class="executor-skeleton hidden">
+        <div class="skeleton-header">
+          <span class="skeleton-agent-tag">executor</span>
+          <span class="skeleton-label">working…</span>
+          <div class="skeleton-spinner"></div>
+        </div>
+        <div class="skeleton-lines">
+          <div class="skeleton-line" style="width:85%"></div>
+          <div class="skeleton-line" style="width:62%"></div>
+          <div class="skeleton-line" style="width:74%"></div>
+        </div>
+      </div>
     </main>
 
     <div id="composer-panel" class="composer-panel">
@@ -98,6 +110,9 @@
                     placeholder="Ask Trinity…"
                     class="composer-input"></textarea>
           <button id="send-btn" type="submit" class="send-icon" aria-label="Send message">➜</button>
+          <button id="stop-btn" type="button" class="stop-btn hidden" aria-label="Stop generation" title="Stop">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          </button>
         </div>
       </form>
     </div>

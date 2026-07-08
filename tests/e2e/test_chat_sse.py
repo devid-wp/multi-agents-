@@ -230,6 +230,7 @@ async def test_chat_planner_401_emits_error(app_client: httpx.AsyncClient) -> No
 # ───────────────────────────────────────────────────────────────────
 # Real-API smoke (skip, если ключей нет)
 # ───────────────────────────────────────────────────────────────────
+@pytest.mark.asyncio
 async def test_chat_real_api_smoke(
     app_client: httpx.AsyncClient, nvidia_keys: dict
 ) -> None:
@@ -260,3 +261,67 @@ async def test_chat_real_api_smoke(
         f"real-API прогон не пришёл ни к final, ни к error за 60с. "
         f"События: {events[:5]!r}…"
     )
+
+
+@pytest.mark.asyncio
+async def test_chat_real_ollama_smoke(app_client: httpx.AsyncClient) -> None:
+    """
+    Smoke с реальным Ollama (стратегия «direct» — только Executor).
+    Skip, если OLLAMA_URL не задан или Ollama недоступна.
+
+    Проверяет полный путь: HTTP POST → SSE-стрим → kind:final/error.
+    Не мокаем ничего — это настоящий end-to-end с локальной моделью.
+    Таймаут 90с (Ollama может быть медленнее, чем NVIDIA).
+    """
+    ollama_url = os.environ.get("OLLAMA_URL", "")
+    if not ollama_url:
+        pytest.skip("OLLAMA_URL не задан — пропускаем Ollama real-API тест")
+
+    # Быстрая pre-flight проверка: Ollama вообще отвечает?
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as probe:
+            r = await probe.get(f"{ollama_url}/api/tags")
+            if r.status_code != 200:
+                pytest.skip(f"Ollama недоступна ({ollama_url}): HTTP {r.status_code}")
+            models = r.json().get("models", [])
+            if not models:
+                pytest.skip(f"Ollama доступна, но моделей нет. Запусти: ollama pull qwen2.5-coder:7b")
+    except Exception as e:
+        pytest.skip(f"Ollama недоступна ({ollama_url}): {e}")
+
+    # Передаём Ollama как Executor в стратегии «direct» (минимальный путь)
+    body = {
+        "message": "Reply with exactly: PONG",
+        "strategy": "direct",
+        "ephemeral_credentials": {
+            # Planner и Critic не нужны при strategy=direct, но
+            # AgentManager требует хотя бы executor
+            "planner": {
+                "provider": "ollama",
+                "base_url": ollama_url,
+            },
+            "critic": {
+                "provider": "ollama",
+                "base_url": ollama_url,
+            },
+            "executor": {
+                "provider": "ollama",
+                "base_url": ollama_url,
+            },
+        },
+    }
+
+    async with app_client.stream("POST", "/api/chat", json=body) as resp:
+        assert resp.status_code == 200, f"HTTP {resp.status_code}"
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        events = await _read_sse_events(resp, stop_on=None, timeout=90.0)
+
+    assert events, "SSE-стрим вернул 0 событий"
+
+    terminal_kinds = {e.get("kind") for e in events}
+    assert terminal_kinds & {"final", "error"}, (
+        f"Ollama real-flow не пришёл ни к final, ни к error за 90с. "
+        f"Виды событий: {sorted(terminal_kinds)!r}, "
+        f"Первые 3: {events[:3]!r}"
+    )
+
