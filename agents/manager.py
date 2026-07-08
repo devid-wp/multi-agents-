@@ -362,10 +362,18 @@ class AgentManager:
                     )
                     break
 
-                if (
-                    verdict.upper().startswith("VERDICT: REVISION")
-                    or i < settings.max_iterations - 1
-                ):
+                # На последней итерации — не отправляем к Planner на правку,
+                # а просто идём к Executor с текущим планом.
+                is_last_iteration = (i >= settings.max_iterations - 1)
+                if is_last_iteration:
+                    yield ProgressEvent(
+                        kind="info",
+                        agent=AgentName.MANAGER,
+                        content=f"⚠️ Достигнут лимит итераций ({settings.max_iterations}). Передаю план Executor-у как есть.",
+                    )
+                    break
+
+                if verdict.upper().startswith("VERDICT: REVISION"):
                     # Отправляем критику обратно Planner-у
                     yield ProgressEvent(
                         kind="info",
@@ -410,10 +418,12 @@ class AgentManager:
                         history.append(revision)
                         plan_text = revision.content
                 else:
+                    # Неизвестный вердикт (не OK, не REVISION) — трактуем как OK
+                    log.warning("Unknown verdict from Critic (iter=%s): %r — treating as OK", i, verdict[:100])
                     yield ProgressEvent(
                         kind="info",
                         agent=AgentName.MANAGER,
-                        content="⚠️ Достигнут лимит итераций. Передаю план Executor-у как есть.",
+                        content=f"⚠ Critic вернул неизвестный вердикт (итерация {i + 1}); считаем план OK.",
                     )
                     break
 
