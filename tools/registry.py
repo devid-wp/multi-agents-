@@ -27,6 +27,7 @@ from tools.bash_tool import ExecuteBash
 from tools.exceptions import SecurityError, ToolValidationError
 from tools.file_tool import DeleteFile, ListDir, ReadFile, SearchInFile, WriteFile, _safe_resolve
 from tools.system_tool import GetSystemStatus
+from tools.git_tool import GitTool
 
 log = logging.getLogger("trinity.tools")
 
@@ -35,7 +36,7 @@ log = logging.getLogger("trinity.tools")
 class ToolRegistry:
     """
     Реестр инструментов. По умолчанию содержит базовый Cline-подобный набор:
-    execute_bash, read_file, write_file, delete_file, search_in_file, list_dir.
+    execute_bash, execute_git, read_file, write_file, delete_file, search_in_file, list_dir.
     """
 
     def __init__(self, workspace: str = "."):
@@ -49,6 +50,7 @@ class ToolRegistry:
         """Регистрирует стандартный набор инструментов."""
         for tool in (
             ExecuteBash(workspace=self.workspace),
+            GitTool(workspace=self.workspace),
             ReadFile(workspace=self.workspace),
             WriteFile(workspace=self.workspace),
             DeleteFile(workspace=self.workspace),

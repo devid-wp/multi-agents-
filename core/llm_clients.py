@@ -33,8 +33,66 @@ from core.models import AgentName, ChatMessage, ToolCall
 log = logging.getLogger("trinity.llm")
 
 
+import asyncio
+from functools import wraps
+
 class LLMError(RuntimeError):
     """Любая ошибка взаимодействия с LLM-провайдером."""
+
+# ───────────────────────────────────────────────────────────────────
+# Retry and Circuit Breaker logic
+# ───────────────────────────────────────────────────────────────────
+_global_consecutive_errors = 0
+_CIRCUIT_BREAKER_THRESHOLD = 15
+
+def with_retry_and_circuit_breaker(max_attempts: int = 3, backoff_delays: tuple = (1, 2, 4)):
+    """
+    Декоратор для LLM-вызовов:
+      - 3 попытки (по умолчанию) с экспоненциальным backoff.
+      - При 429/50x ошибках ждет и пробует снова (до исчерпания попыток).
+      - Если глобально подряд много ошибок — открывает circuit breaker.
+    В самом клиенте мы можем дополнительно переключать ключи перед ретраем.
+    """
+    def decorator(func: Callable):
+        @wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            global _global_consecutive_errors
+            
+            if _global_consecutive_errors >= _CIRCUIT_BREAKER_THRESHOLD:
+                raise LLMError("Circuit breaker open: Too many consecutive LLM errors globally.")
+                
+            last_exc = None
+            for attempt in range(max_attempts):
+                try:
+                    res = await func(self, *args, **kwargs)
+                    _global_consecutive_errors = 0  # Сброс при успехе
+                    return res
+                except Exception as e:
+                    # Проверяем, нужно ли ретраить (обычно 429, 50x)
+                    is_retryable = False
+                    if "429" in str(e) or "503" in str(e) or "502" in str(e) or "504" in str(e) or "NetworkError" in str(e):
+                        is_retryable = True
+                        
+                    if not is_retryable or attempt == max_attempts - 1:
+                        _global_consecutive_errors += 1
+                        raise e
+                    
+                    delay = backoff_delays[attempt] if attempt < len(backoff_delays) else backoff_delays[-1]
+                    log.warning(f"LLM call failed with {e}. Retrying in {delay}s (attempt {attempt + 1}/{max_attempts})...")
+                    
+                    # Если клиент поддерживает ротацию ключей (например, NvidiaProvider),
+                    # мы можем запросить её:
+                    agent = kwargs.get('agent')
+                    if hasattr(self, '_resolve') and agent:
+                        provider = self._resolve(agent)
+                        if hasattr(provider, 'rotate_key'):
+                            provider.rotate_key()
+                            
+                    await asyncio.sleep(delay)
+                    
+            raise last_exc
+        return wrapper
+    return decorator
 
 
 class BaseLLMClient(abc.ABC):
@@ -76,6 +134,7 @@ class OpenAICompatibleClient(BaseLLMClient):
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
+    @with_retry_and_circuit_breaker()
     async def chat(
         self,
         *,
@@ -138,6 +197,10 @@ class NvidiaProvider:
     base_url: str
     model_url: Optional[str] = None
 
+    # Внутренний пул ключей
+    _keys: List[str] = None  # type: ignore
+    _current_key_idx: int = 0
+
     # Маркер «хвоста», который клиент дописывает к base_url.
     # Если base_url уже заканчивается на него — не дублируем.
     _CHAT_COMPLETIONS_SUFFIX = "/chat/completions"
@@ -145,7 +208,12 @@ class NvidiaProvider:
     def __post_init__(self) -> None:
         if not self.api_key or not self.api_key.strip():
             raise LLMError("NvidiaProvider: api_key is empty")
-        self.api_key = self.api_key.strip()
+        # Парсим ключи, разделенные запятой
+        self._keys = [k.strip() for k in self.api_key.split(",") if k.strip()]
+        if not self._keys:
+            raise LLMError("NvidiaProvider: no valid keys found")
+        self.api_key = self._keys[0]
+        
         self.base_url = (self.base_url or "https://integrate.api.nvidia.com/v1").rstrip("/")
         if self.model_url:
             self.model_url = self.model_url.strip().rstrip("/")
@@ -233,6 +301,18 @@ class NvidiaProvider:
             f"(source=base_url + appended /chat/completions)"
         )
         return result
+
+    def get_current_key(self) -> str:
+        """Возвращает текущий API-ключ из пула."""
+        return self._keys[self._current_key_idx]
+
+    def rotate_key(self) -> None:
+        """Переключает на следующий ключ в пуле (round-robin)."""
+        if len(self._keys) > 1:
+            old_key = self._keys[self._current_key_idx]
+            self._current_key_idx = (self._current_key_idx + 1) % len(self._keys)
+            new_key = self._keys[self._current_key_idx]
+            print(f"DEBUG_KEY: rotated key from {old_key[:6]}... to {new_key[:6]}...")
 
 
 # Тип для «ленивого» провайдера (на случай, если креды меняются в рантайме).
@@ -367,12 +447,13 @@ class NvidiaClient(BaseLLMClient):
 
     def _headers(self, provider: NvidiaProvider) -> Dict[str, str]:
         return {
-            "Authorization": f"Bearer {provider.api_key}",
+            "Authorization": f"Bearer {provider.get_current_key()}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
 
     # ── chat() — основной метод ───────────────────────────────────
+    @with_retry_and_circuit_breaker()
     async def chat(
         self,
         model: str,
@@ -485,6 +566,7 @@ class OllamaClient(BaseLLMClient):
             raise LLMError(f"Ollama tags {resp.status_code}: {resp.text[:300]}")
         return [m["name"] for m in resp.json().get("models", [])]
 
+    @with_retry_and_circuit_breaker()
     async def chat(
         self,
         *,
@@ -586,6 +668,7 @@ class GoogleGeminiClient(BaseLLMClient):
         self._timeout = timeout or settings.llm_timeout_seconds
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
 
+    @with_retry_and_circuit_breaker()
     async def chat(
         self,
         *,

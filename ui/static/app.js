@@ -270,6 +270,30 @@
   const settingsForm = $("#settings-form");
   const settingsStat = $("#settings-status");
 
+  // ── Dynamic API Keys ───────────────────────────────────────────
+  document.addEventListener('input', (e) => {
+    if (e.target.classList.contains('api-key-input')) {
+      const container = e.target.closest('.api-keys-container');
+      if (!container) return;
+      
+      const inputs = Array.from(container.querySelectorAll('.api-key-input'));
+      const lastInput = inputs[inputs.length - 1];
+      
+      if (lastInput.value.trim() !== '') {
+        const newInput = lastInput.cloneNode();
+        newInput.value = '';
+        newInput.classList.add('new-input-anim');
+        container.appendChild(newInput);
+      }
+      
+      for (let i = inputs.length - 2; i >= 0; i--) {
+          if (inputs[i].value.trim() === '') {
+              inputs[i].remove();
+          }
+      }
+    }
+  });
+
   // ── localStorage helpers ────────────────────────────────────────
   function storageLoad() {
     try {
@@ -394,9 +418,22 @@
         if (f.elements[`${agentName}_base_provider`]) f.elements[`${agentName}_base_provider`].value = cfg.provider || "gpt";
       }
       
-      // Clear password fields on open
-      if (f.elements[`${agentName}_base_api_key`]) f.elements[`${agentName}_base_api_key`].value = "";
-      if (f.elements[`${agentName}_custom_api_key`]) f.elements[`${agentName}_custom_api_key`].value = "";
+      // Reset password fields to a single empty input on open
+      const resetKeys = (name) => {
+        const inputs = Array.from(document.querySelectorAll(`input[name="${name}"]`));
+        if (inputs.length > 0) {
+            const container = inputs[0].closest('.api-keys-container');
+            if (container) {
+                container.innerHTML = '';
+                const baseInput = inputs[0].cloneNode();
+                baseInput.value = '';
+                baseInput.classList.remove('new-input-anim');
+                container.appendChild(baseInput);
+            }
+        }
+      };
+      resetKeys(`${agentName}_base_api_key`);
+      resetKeys(`${agentName}_custom_api_key`);
     };
     
     pop("planner");
@@ -413,16 +450,20 @@
     const getAgentPayload = (agentName) => {
         const type = fd.get(`${agentName}_type`);
         const oldCfg = existing[agentName] || {};
+        
+        const baseKeys = fd.getAll(`${agentName}_base_api_key`).map(k => k.trim()).filter(Boolean);
+        const customKeys = fd.getAll(`${agentName}_custom_api_key`).map(k => k.trim()).filter(Boolean);
+        
         if (type === "base") {
             const provider = fd.get(`${agentName}_base_provider`);
-            const api_key = fd.get(`${agentName}_base_api_key`) || oldCfg.api_key || null;
+            const api_key = baseKeys.length > 0 ? baseKeys.join(',') : (oldCfg.api_key || null);
             return { provider, api_key, base_url: null, model_name: null };
         } else {
             const provider = fd.get(`${agentName}_custom_provider`);
             // Ollama is local — it never needs an API key
             const api_key = provider === 'ollama'
                 ? null
-                : (fd.get(`${agentName}_custom_api_key`) || oldCfg.api_key || null);
+                : (customKeys.length > 0 ? customKeys.join(',') : (oldCfg.api_key || null));
             const base_url = provider === 'google' ? null : (fd.get(`${agentName}_base_url`) || null);
             const model_name = fd.get(`${agentName}_model_name`) || null;
             return { provider, api_key, base_url, model_name };
