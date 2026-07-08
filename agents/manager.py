@@ -42,6 +42,7 @@ from agents.critic import CriticAgent
 from agents.executor import ExecutorAgent
 from agents.planner import PlannerAgent
 from core.diagnostics import diagnostics_bus
+from core.history import HistoryManager
 
 log = logging.getLogger("trinity.manager")
 
@@ -52,9 +53,11 @@ class AgentManager:
     пользователя. Один AgentManager = одна пользовательская сессия.
     """
 
-    def __init__(self, creds: UserCredentials):
+    def __init__(self, creds: UserCredentials, session_id: Optional[str] = None):
         self.creds = creds
+        self.session_id = session_id
         self.tools = ToolRegistry(workspace=settings.workspace_dir)
+        self.history_manager = HistoryManager(workspace_dir=settings.workspace_dir)
 
         from core.llm_clients import NvidiaClient, OllamaClient, OpenAICompatibleClient, GoogleGeminiClient
 
@@ -171,6 +174,15 @@ class AgentManager:
                 )
                 return "VERDICT: OK (critic returned empty content)"
             return str(content).strip()
+            
+        # Загружаем историю из файла, если есть session_id
+        session_history: List[ChatMessage] = []
+        if self.session_id:
+            try:
+                # Читаем синхронно, т.к. это очень быстрая операция (JSON < 1MB)
+                session_history = await asyncio.to_thread(self.history_manager.load, self.session_id)
+            except Exception as e:
+                log.error(f"Failed to load history for session {self.session_id}: {e}")
 
         try:
             # Объявляем выбранную стратегию
@@ -203,6 +215,30 @@ class AgentManager:
                     )
                     return
 
+            # Очередь событий (push из корутин agent.run() в main-цикл)
+            event_q: asyncio.Queue = asyncio.Queue()
+
+            def emit(ev: ProgressEvent) -> None:
+                try:
+                    event_q.put_nowait(ev)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("emit() failed: %s", e)
+                # Глобальный канал диагностики (Live Diagnostics UI).
+                try:
+                    if ev.kind in {"tool_call", "tool_result", "error"}:
+                        diagnostics_bus.publish(ev)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("diagnostics_bus.publish() failed: %s", e)
+
+            def ctx_factory(task: str, history: List[ChatMessage]) -> AgentContext:
+                return AgentContext(
+                    task=task,
+                    history=history,
+                    emit=emit,
+                    tools=self.tools,
+                    max_tool_iterations=settings.max_iterations,
+                )
+
             # ── Стратегия DIRECT: сразу к Executor ────────────────────
             if effective_strategy == "direct":
                 yield ProgressEvent(
@@ -211,16 +247,11 @@ class AgentManager:
                     content="⚡ Режим DIRECT: передаю задачу напрямую Executor.",
                 )
                 try:
-                    final = await self.executor.run(
-                        ctx_factory(
-                            f"Задача пользователя: {user_task}\n\n"
-                            "Выполни её напрямую, используя доступные инструменты.",
-                            history=[],
-                        )
-                    )
-                except LLMError as e:
-                    yield ProgressEvent(kind="error", agent=AgentName.MANAGER, content=str(e))
-                    return
+                    final = await self.executor.run(ctx_factory(
+                        f"Задача пользователя: {user_task}\n\n"
+                        "Выполни её напрямую, используя доступные инструменты.",
+                        session_history
+                    ))
                 except Exception as e:  # noqa: BLE001
                     log.exception("executor.run() crashed (direct mode)")
                     yield ProgressEvent(
@@ -241,36 +272,15 @@ class AgentManager:
                 )
                 return
 
-            # Очередь событий (push из корутин agent.run() в main-цикл)
-            event_q: asyncio.Queue = asyncio.Queue()
 
-            def emit(ev: ProgressEvent) -> None:
-                try:
-                    event_q.put_nowait(ev)
-                except Exception as e:  # noqa: BLE001
-                    log.warning("emit() failed: %s", e)
-                # Глобальный канал диагностики (Live Diagnostics UI).
-                # Публикуем ТОЛЬКО tool_call/tool_result/error — остальные
-                # события остаются в /api/chat стриме.
-                try:
-                    if ev.kind in {"tool_call", "tool_result", "error"}:
-                        diagnostics_bus.publish(ev)
-                except Exception as e:  # noqa: BLE001
-                    log.warning("diagnostics_bus.publish() failed: %s", e)
 
-            ctx_factory = lambda task, history=None: AgentContext(  # noqa: E731
-                task=task or "",
-                history=history or [],
-                emit=emit,
-                tools=self.tools,
-                max_tool_iterations=settings.max_iterations,
-            )
+            # Теперь можно инициализировать `history` для автостратегии
+            history: List[ChatMessage] = session_history
 
             # ── Шаг 1: Planner пишет первый план ─────────────────
             plan_text = ""
-            history: List[ChatMessage] = []
             try:
-                plan_msg = await self.planner.run(ctx_factory(user_task, history=[]))
+                plan_msg = await self.planner.run(ctx_factory(user_task, history))
                 if plan_msg is None or not getattr(plan_msg, "content", None):
                     log.warning("planner.run() returned empty/None — using stub plan")
                     plan_text = "(пустой план от Planner)"
@@ -434,7 +444,7 @@ class AgentManager:
                         f"Одобренный план:\n\n{plan_text}\n\n"
                         f"Исходная задача пользователя: {user_task}\n\n"
                         "Выполни его пошагово, используя доступные инструменты.",
-                        history=[],
+                        history,
                     )
                 )
             except LLMError as e:
@@ -487,3 +497,10 @@ class AgentManager:
                 # Если даже yield упал (стрим уже закрыт) — глотаем.
                 pass
             return
+        finally:
+            # Гарантированное сохранение истории после завершения (успешного или нет)
+            if self.session_id and history:
+                try:
+                    await asyncio.to_thread(self.history_manager.save, self.session_id, history)
+                except Exception as e:
+                    log.error(f"Failed to save history for session {self.session_id}: {e}")

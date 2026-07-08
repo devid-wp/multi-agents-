@@ -135,6 +135,8 @@ class ChatRequest(BaseModel):
     """Тело POST /api/chat — пользовательский промпт."""
 
     message: str = Field(..., min_length=1, max_length=20_000)
+    # Опционально: идентификатор сессии для персистентности истории
+    session_id: Optional[str] = None
     # Опционально: пользователь может сразу прислать кредентиалы,
     # не сохраняя их в сессии (для быстрых тестов)
     ephemeral_credentials: Optional[SettingsPayload] = None

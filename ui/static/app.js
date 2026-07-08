@@ -21,6 +21,7 @@
   // ════════════════════════════════════════════════════════════
   const ENDPOINTS = {
     chat:          "/api/chat",
+    chatHistory:   "/api/chat/history",
     agentsActive:  "/api/agents/active",
     agentsSwitch:  "/api/agents/switch",
     wsTree:        "/api/workspace/tree",       // GET ?path=. &hidden=0|1
@@ -36,6 +37,18 @@
   // ════════════════════════════════════════════════════════════
   // 2. State
   // ════════════════════════════════════════════════════════════
+  // Генерируем или восстанавливаем session_id из sessionStorage.
+  // sessionStorage сбрасывается при закрытии вкладки, но переживает F5.
+  function getOrCreateSessionId() {
+    let id = sessionStorage.getItem("trinity_session_id");
+    if (!id) {
+      id = "s-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+      sessionStorage.setItem("trinity_session_id", id);
+    }
+    return id;
+  }
+  const SESSION_ID = getOrCreateSessionId();
+
   const state = {
     running: false,        // true while a chat run is in progress
     abortController: null, // for /api/chat fetch
@@ -870,7 +883,7 @@
     // user message bubble
     renderBridgeEvent({ kind: "user", agent: "user", content: text, timestamp: Date.now() / 1000 });
 
-    const payload = { message: text, strategy: state.selectedStrategy || "auto" };
+    const payload = { message: text, strategy: state.selectedStrategy || "auto", session_id: SESSION_ID };
     const creds = buildEphemeralCreds();
     if (creds) payload.ephemeral_credentials = creds;
 
@@ -1060,6 +1073,26 @@
 
     updateHardwareLinkState(false, "Awaiting ESP32 connection…");
     updateToolLifecycleState("idle", "Waiting for the next tool action…", null);
+
+    // Загружаем сохранённую историю диалога для текущей сессии (F5-устойчивость)
+    await loadSessionHistory();
+  }
+
+  async function loadSessionHistory() {
+    try {
+      const resp = await fetch(`${ENDPOINTS.chatHistory}?session_id=${encodeURIComponent(SESSION_ID)}`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.ok || !data.messages || data.messages.length === 0) return;
+
+      // Отображаем панель восстановления
+      const historyBanner = document.createElement("div");
+      historyBanner.className = "card chat-card info";
+      historyBanner.innerHTML = `<div class="meta"><span class="agent-tag system">system</span></div><div class="body">&#9679; Сессия восстановлена (${data.messages.length} сообщений из предыдущей сессии)</div>`;
+      if (chatContainerEl) chatContainerEl.appendChild(historyBanner);
+    } catch (e) {
+      console.warn("loadSessionHistory failed:", e);
+    }
   }
 
   document.addEventListener("DOMContentLoaded", boot);

@@ -252,6 +252,31 @@ async def health():
 
 
 # ───────────────────────────────────────────────────────────────────
+# History API (загрузка сохранённой истории диалога)
+# ───────────────────────────────────────────────────────────────────
+@app.get("/api/chat/history")
+async def get_history(session_id: str = Query("")):
+    """
+    Возвращает сохранённую историю диалога для данной сессии.
+    Фронтенд вызывает этот эндпоинт при загрузке страницы, чтобы
+    восстановить bridge[] без F5.
+    """
+    from core.history import HistoryManager
+    from core.config import settings
+    
+    if not session_id:
+        return {"ok": False, "messages": [], "error": "session_id is required"}
+    
+    hm = HistoryManager(workspace_dir=settings.workspace_dir)
+    messages = hm.load(session_id)
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "messages": [m.model_dump(mode="json") for m in messages]
+    }
+
+
+# ───────────────────────────────────────────────────────────────────
 # Chat (SSE-стрим) — протокол не меняем
 # ───────────────────────────────────────────────────────────────────
 @app.post("/api/chat")
@@ -287,7 +312,7 @@ async def chat(request: Request, payload: ChatRequest):
     # Импортируем здесь, чтобы избежать циклических импортов на старте
     from agents.manager import AgentManager
 
-    manager = AgentManager(creds=creds)
+    manager = AgentManager(creds=creds, session_id=payload.session_id)
 
     async def event_stream() -> AsyncGenerator[str, None]:
         # Сначала — readiness report
