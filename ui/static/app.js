@@ -697,11 +697,35 @@
       </div>`;
 
     if (k === "tool_call" && ev.tool) {
+      let argsHtml = `<pre>${escapeHtml(safeJson(ev.tool.arguments))}</pre>`;
+      
+      if (ev.tool.name === "replace_in_file" && ev.tool.arguments) {
+        const args = ev.tool.arguments;
+        const target = typeof args.target_content === "string" ? args.target_content : "";
+        const repl = typeof args.replacement_content === "string" ? args.replacement_content : "";
+        argsHtml = `
+          <div class="diff-view">
+            <div class="diff-header">Replacing in: ${escapeHtml(args.path || "unknown")}</div>
+            <pre class="diff-target">- ${escapeHtml(target).replace(/\n/g, "\n- ")}</pre>
+            <pre class="diff-replace">+ ${escapeHtml(repl).replace(/\n/g, "\n+ ")}</pre>
+          </div>
+        `;
+      } else if (ev.tool.name === "write_file" && ev.tool.arguments) {
+        const args = ev.tool.arguments;
+        const content = typeof args.content === "string" ? args.content : "";
+        argsHtml = `
+          <div class="diff-view">
+            <div class="diff-header">Writing to: ${escapeHtml(args.path || "unknown")}</div>
+            <pre class="diff-replace">+ ${escapeHtml(content).replace(/\n/g, "\n+ ")}</pre>
+          </div>
+        `;
+      }
+
       return `${meta}
         <div class="body">
           <span class="tool-name">→ ${escapeHtml(ev.tool.name)}</span>
           ${ev.tool.id ? `<span class="muted"> · ${escapeHtml(ev.tool.id)}</span>` : ""}
-          <pre>${escapeHtml(safeJson(ev.tool.arguments))}</pre>
+          ${argsHtml}
         </div>`;
     }
     if (k === "tool_result" && ev.result) {
