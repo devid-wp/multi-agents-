@@ -104,7 +104,16 @@ class ExecuteBash(Tool):
         if err:
             result += ("\n--- stderr ---\n" + err)
         result += f"\n[exit code: {rc}]"
-        # Ограничим длину, чтобы LLM не утонула в логах
+        
+        # Умное усечение: оставляем начало и конец, если строк слишком много
+        lines = result.splitlines()
+        if len(lines) > 200:
+            head = lines[:100]
+            tail = lines[-100:]
+            result = "\n".join(head) + f"\n\n[... {len(lines)-200} lines truncated ...]\n\n" + "\n".join(tail)
+
+        # Ограничим общую длину в символах (защита от гигантских однострочников)
         if len(result) > 20_000:
-            result = result[:20_000] + "\n[...truncated...]"
+            result = result[:10_000] + f"\n\n[... {len(result)-20_000} chars truncated ...]\n\n" + result[-10_000:]
+            
         return result

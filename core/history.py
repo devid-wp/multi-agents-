@@ -50,14 +50,33 @@ class HistoryManager:
             return []
 
     def save(self, session_id: str, messages: List[ChatMessage]) -> None:
-        """Сохраняет историю диалога для указанной сессии."""
+        """Сохраняет историю диалога для указанной сессии, применяя сжатие (Sliding Window), если сообщений слишком много."""
         if not session_id:
             return
+            
+        # --- SLIDING WINDOW COMPRESSION ---
+        MAX_HISTORY = 40
+        if len(messages) > MAX_HISTORY:
+            # Оставляем первые 5 сообщений (контекст задачи и первый план), 
+            # и последние (MAX_HISTORY - 6) сообщений. 
+            # Вырезанное заменяем одним системным сообщением.
+            head = messages[:5]
+            tail = messages[-(MAX_HISTORY - 6):]
+            
+            truncated_count = len(messages) - len(head) - len(tail)
+            from core.models import ChatMessage, Role
+            summary_msg = ChatMessage(
+                role=Role.SYSTEM,
+                content=f"[... {truncated_count} previous turns omitted to save context window ...]"
+            )
+            messages_to_save = head + [summary_msg] + tail
+        else:
+            messages_to_save = messages
             
         path = self._get_path(session_id)
         try:
             # Сериализуем через pydantic, чтобы сохранить все поля (включая datetime/uuid)
-            data = [m.model_dump(mode="json") for m in messages]
+            data = [m.model_dump(mode="json") for m in messages_to_save]
             
             # Пишем во временный файл и атомарно переименовываем
             temp_path = path + ".tmp"
