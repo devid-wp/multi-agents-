@@ -55,11 +55,29 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-# Логирование
+import logging
+from logging.handlers import RotatingFileHandler
+
+# ───────────────────────────────────────────────────────────────────
+# Логирование (Persistent + Console)
+# ───────────────────────────────────────────────────────────────────
+log_dir = os.path.join(BASE_DIR, "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "trinity.log")
+
+file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
+console_handler = logging.StreamHandler()
+
+log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+formatter = logging.Formatter(log_format)
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[file_handler, console_handler],
 )
+
 log = logging.getLogger("trinity.app")
 
 

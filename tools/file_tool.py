@@ -31,6 +31,7 @@ __all__ = [
     "_safe_resolve",
     "ReadFile",
     "WriteFile",
+    "ReplaceInFile",
     "DeleteFile",
     "SearchInFile",
     "ListDir",
@@ -101,6 +102,14 @@ class ReadFile(Tool):
                 "type": "string",
                 "description": "Path to the file (relative to workspace or absolute).",
             },
+            "start_line": {
+                "type": "integer",
+                "description": "Optional start line number (1-indexed).",
+            },
+            "end_line": {
+                "type": "integer",
+                "description": "Optional end line number (1-indexed, inclusive).",
+            },
         },
         "required": ["path"],
     }
@@ -127,16 +136,26 @@ class ReadFile(Tool):
             return f"[ERROR] Not a regular file: {path}"
 
         try:
-            content = path.read_text(encoding="utf-8", errors="replace")
+            with path.open("r", encoding="utf-8", errors="replace") as fh:
+                lines = fh.readlines()
         except PermissionError as e:
             return f"[BLOCKED] OS-level read denied for {path}: {e}"
         except OSError as e:
             return f"[ERROR] Cannot read {path}: {e}"
+            
+        start_line = arguments.get("start_line")
+        end_line = arguments.get("end_line")
+        
+        # 1-indexed to 0-indexed
+        start_idx = max(0, int(start_line) - 1) if start_line is not None else 0
+        end_idx = min(len(lines), int(end_line)) if end_line is not None else len(lines)
+        
+        content = "".join(lines[start_idx:end_idx])
 
         if len(content) > self.MAX_CHARS:
             content = (
                 content[: self.MAX_CHARS]
-                + f"\n\n[...truncated; file is larger than {self.MAX_CHARS} chars...]"
+                + f"\n\n[...truncated; selection is larger than {self.MAX_CHARS} chars...]"
             )
         return content
 
@@ -191,6 +210,89 @@ class WriteFile(Tool):
             return f"[ERROR] Write failed for {path}: {e}"
 
         return f"[OK] Wrote {len(content)} bytes to {path}"
+
+
+# ───────────────────────────────────────────────────────────────────
+# Replace
+# ───────────────────────────────────────────────────────────────────
+class ReplaceInFile(Tool):
+    name = "replace_in_file"
+    description = (
+        "Replace a specific block of text in a file with new text. "
+        "The target_content must match exactly (including whitespace and indentation). "
+        "Use this instead of write_file for modifying large files to avoid rewriting the whole file."
+    )
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file (relative to workspace or absolute).",
+            },
+            "target_content": {
+                "type": "string",
+                "description": "The exact block of text to be replaced.",
+            },
+            "replacement_content": {
+                "type": "string",
+                "description": "The new text that will replace the target_content.",
+            },
+        },
+        "required": ["path", "target_content", "replacement_content"],
+    }
+
+    def __init__(self, workspace: str = "."):
+        self.workspace = workspace
+
+    async def execute(self, arguments: Dict[str, Any]) -> str:
+        path_arg = arguments.get("path")
+        if not path_arg:
+            return "[ERROR] 'path' argument is required."
+            
+        target = arguments.get("target_content")
+        replacement = arguments.get("replacement_content")
+        
+        if not isinstance(target, str) or not isinstance(replacement, str):
+            return "[ERROR] 'target_content' and 'replacement_content' must be strings."
+            
+        if not target:
+            return "[ERROR] 'target_content' cannot be empty."
+
+        try:
+            path = _safe_resolve(self.workspace, path_arg)
+        except PermissionError as e:
+            return f"[BLOCKED] {e}"
+
+        if not path.exists():
+            return f"[ERROR] File not found: {path}"
+        if not path.is_file():
+            return f"[ERROR] Not a regular file: {path}"
+
+        try:
+            content = path.read_text(encoding="utf-8", errors="strict")
+        except PermissionError as e:
+            return f"[BLOCKED] OS-level read denied for {path}: {e}"
+        except OSError as e:
+            return f"[ERROR] Cannot read {path}: {e}"
+        except UnicodeDecodeError:
+            return f"[ERROR] Cannot read {path} as UTF-8."
+            
+        occurrences = content.count(target)
+        if occurrences == 0:
+            return "[ERROR] target_content not found in the file. Make sure indentation and whitespace match exactly."
+        if occurrences > 1:
+            return f"[ERROR] target_content found {occurrences} times. It must be unique."
+            
+        new_content = content.replace(target, replacement, 1)
+        
+        try:
+            path.write_text(new_content, encoding="utf-8")
+        except PermissionError as e:
+            return f"[BLOCKED] OS-level write denied for {path}: {e}"
+        except OSError as e:
+            return f"[ERROR] Write failed for {path}: {e}"
+
+        return f"[OK] Replaced 1 occurrence of target block in {path}"
 
 
 # ───────────────────────────────────────────────────────────────────

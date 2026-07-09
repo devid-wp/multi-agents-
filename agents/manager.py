@@ -59,7 +59,7 @@ class AgentManager:
         self.tools = ToolRegistry(workspace=settings.workspace_dir)
         self.history_manager = HistoryManager(workspace_dir=settings.workspace_dir)
 
-        from core.llm_clients import NvidiaClient, OllamaClient, OpenAICompatibleClient, GoogleGeminiClient
+        from core.llm_clients import NvidiaClient, OllamaClient, OpenAICompatibleClient, GoogleGeminiClient, AnthropicClient
 
         def _create_client(cfg, agent_name: AgentName):
             if not cfg:
@@ -76,6 +76,20 @@ class AgentManager:
                 if not cfg.api_key:
                     raise LLMError(f"API key is missing for Google provider ({agent_name})")
                 return GoogleGeminiClient(api_key=cfg.api_key)
+            elif provider == "anthropic":
+                from core.llm_clients import LLMError
+                if not cfg.api_key:
+                    raise LLMError(f"API key is missing for Anthropic provider ({agent_name})")
+                return AnthropicClient(api_key=cfg.api_key, base_url=cfg.base_url or "https://api.anthropic.com/v1")
+            elif provider == "gpt":
+                from core.llm_clients import LLMError
+                if not cfg.api_key:
+                    raise LLMError(f"API key is missing for OpenAI (GPT) provider ({agent_name})")
+                return OpenAICompatibleClient(
+                    api_key=cfg.api_key,
+                    base_url=cfg.base_url or "https://api.openai.com/v1",
+                    model=cfg.model_name
+                )
             else:
                 return OpenAICompatibleClient(
                     api_key=cfg.api_key,
