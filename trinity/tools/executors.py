@@ -1654,6 +1654,10 @@ async def dispatch(name: str, arguments: Any, *, workspace: Optional[str] = None
     Returns a list of `ToolOperationResult` so callers can format tool
     responses uniformly. `run_commands` is the only one that supports
     `auto_approve` (intended for tests).
+
+    Note: `editor` and `apply_patch` are single-input tools and natively
+    return ONE `ToolOperationResult`. We wrap them into a list here so
+    every caller (manager, base agent loop) can iterate uniformly.
     """
     fn = EXECUTORS.get(name)
     if fn is None:
@@ -1663,4 +1667,8 @@ async def dispatch(name: str, arguments: Any, *, workspace: Optional[str] = None
         )]
     if name == "run_commands":
         return await fn(arguments, workspace=workspace, options=options, auto_approve=auto_approve)
-    return await fn(arguments, workspace=workspace, options=options)
+    result = await fn(arguments, workspace=workspace, options=options)
+    # Normalize single-result executors (editor, apply_patch) to a list.
+    if isinstance(result, ToolOperationResult):
+        return [result]
+    return result

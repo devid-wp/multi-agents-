@@ -59,6 +59,37 @@ class AgentManager:
         self.tools = ToolRegistry(workspace=settings.workspace_dir)
         self.history_manager = HistoryManager(workspace_dir=settings.workspace_dir)
 
+        # ── Cline-style tool manager (Python port of the 6 tools
+        # из extracted_tools/). Подключается ко всем агентам через
+        # `AgentContext.cline_tool_manager`. Активируется ТОЛЬКО если
+        # хотя бы один из креденшалов указывает на провайдера, который
+        # отдаёт functionCall-ы (Google Gemini) — для остальных путей
+        # (Ollama, NVIDIA NIM с Cline-style JSON-блоками) продолжает
+        # работать старый путь через `self.tools` (ToolRegistry).
+        self.cline_tool_manager = None
+        try:
+            providers_in_use = [
+                (c.provider or "").lower()
+                for c in (creds.planner, creds.critic, creds.executor)
+                if c is not None
+            ]
+            if any(p == "google" for p in providers_in_use):
+                from trinity.tools.manager import ClineToolManager
+                self.cline_tool_manager = ClineToolManager(
+                    workspace=settings.workspace_dir,
+                )
+                log.info(
+                    "ClineToolManager enabled for this session "
+                    "(workspace=%s, tools=%s)",
+                    settings.workspace_dir,
+                    self.cline_tool_manager.list_tool_names(),
+                )
+        except Exception as e:  # noqa: BLE001
+            # Не валим инициализацию — без Cline-tool-manager агенты
+            # просто работают через старый ToolRegistry.
+            log.warning("Failed to initialize ClineToolManager: %s", e)
+            self.cline_tool_manager = None
+
         from core.llm_clients import NvidiaClient, OllamaClient, OpenAICompatibleClient, GoogleGeminiClient, AnthropicClient
 
         def _create_client(cfg, agent_name: AgentName):
@@ -278,6 +309,7 @@ class AgentManager:
                     emit=emit,
                     tools=self.tools,
                     max_tool_iterations=settings.max_iterations,
+                    cline_tool_manager=self.cline_tool_manager,
                 )
 
             # ── Стратегия DIRECT: сразу к Executor ────────────────────
