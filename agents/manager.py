@@ -101,18 +101,44 @@ class AgentManager:
         critic_client = _create_client(creds.critic, AgentName.CRITIC)
         executor_client = _create_client(creds.executor, AgentName.EXECUTOR)
 
+        # ── Слияние в один Ollama-клиент ─────────────────────────────────────
+        # Если все три агента используют Ollama (или конфиг не задан вовсе) —
+        # создаём один shared_client, чтобы они работали через одно соединение.
+        def _is_ollama(cfg) -> bool:
+            return cfg is None or (cfg.provider or "").lower() == "ollama"
+
+        if _is_ollama(creds.planner) and _is_ollama(creds.critic) and _is_ollama(creds.executor):
+            ollama_url = (
+                (creds.executor and creds.executor.base_url)
+                or (creds.planner and creds.planner.base_url)
+                or "http://localhost:11434"
+            )
+            # Имя модели берём из executor (основной рабочей модели)
+            ollama_model = (
+                (creds.executor and creds.executor.model_name)
+                or "qwen2.5-coder:7b"
+            )
+            log.info(
+                "All agents use Ollama — creating shared OllamaClient: "
+                "url=%s model=%s", ollama_url, ollama_model
+            )
+            shared_client = OllamaClient(base_url=ollama_url, default_model=ollama_model)
+            planner_client = shared_client
+            critic_client = shared_client
+            executor_client = shared_client
+
         self.planner = PlannerAgent(
-            model=creds.planner.model_name if creds.planner else "abacusai/dracarys-llama-3.1-70b-instruct",
+            model=creds.planner.model_name if creds.planner else "qwen2.5-coder:7b",
             llm_client=planner_client,
             tools=self.tools,
         )
         self.critic = CriticAgent(
-            model=creds.critic.model_name if creds.critic else "google/gemma-2-27b-it",
+            model=creds.critic.model_name if creds.critic else "qwen2.5-coder:7b",
             llm_client=critic_client,
             tools=self.tools,
         )
         self.executor = ExecutorAgent(
-            model=creds.executor.model_name if creds.executor else "qwen2.5-coder",
+            model=creds.executor.model_name if creds.executor else "qwen2.5-coder:7b",
             llm_client=executor_client,
             tools=self.tools,
         )
@@ -191,6 +217,7 @@ class AgentManager:
             
         # Загружаем историю из файла, если есть session_id
         session_history: List[ChatMessage] = []
+        history = None  # Инициализируем, чтобы finally-блок не упал с UnboundLocalError
         if self.session_id:
             try:
                 # Читаем синхронно, т.к. это очень быстрая операция (JSON < 1MB)

@@ -631,6 +631,22 @@
     state.bridge = [];
   }
 
+  function cardClassForEvent(ev) {
+    const k = ev.kind || "info";
+    const a = ev.agent || "manager";
+    let base = "";
+    if (k === "error")       base = "error";
+    else if (k === "final")  base = "final";
+    else if (k === "info")   base = "info";
+    else if (k === "agent_message" || k === "agent_start" || k === "agent_done") base = a;
+    else if (k === "tool_call")   base = "tool_call";
+    else if (k === "tool_result") base = "tool_result" + (ev.result && ev.result.success ? "" : " failed");
+    else base = "info";
+    
+    // Always attach the agent class for filtering
+    return `${base} agent-${a}`;
+  }
+
   async function refreshActiveAgent() {
     try {
       const res = await fetch(ENDPOINTS.agentsActive, { method: "GET" });
@@ -671,20 +687,6 @@
     }
   }
 
-  function cardClassForEvent(ev) {
-    const k = ev.kind || "info";
-    const a = ev.agent || "manager";
-    if (k === "error")       return "error";
-    if (k === "final")       return "final";
-    if (k === "info")        return "info " + a;
-    if (k === "agent_message") return a;
-    if (k === "agent_start" || k === "agent_done") return a;
-    if (k === "tool_call")   return "tool_call";
-    if (k === "tool_result") {
-      return "tool_result" + (ev.result && ev.result.success ? "" : " failed");
-    }
-    return a;
-  }
 
   function bridgeCardHTML(ev) {
     const a = ev.agent || "manager";
@@ -1079,13 +1081,26 @@
         setActiveAgentButton(agent);
         setActiveStrategy(strategy);
         state.selectedAgent = agent;
+        
+        // Room filtering
+        const chatContainer = $("#chat-container");
+        if (chatContainer) {
+          chatContainer.dataset.room = agent;
+        }
+
         // Also call switchAgent to keep backend ACTIVE_AGENT in sync
-        void switchAgent(agent);
+        if (agent !== "all") {
+          void switchAgent(agent);
+        }
       });
     });
-    // Init badge from default active button
+    // Init badge and room from default active button
     const defaultBtn = $(".agent-btn.active");
-    if (defaultBtn) setActiveStrategy(defaultBtn.dataset.strategy || "auto");
+    if (defaultBtn) {
+      setActiveStrategy(defaultBtn.dataset.strategy || "auto");
+      const chatContainer = $("#chat-container");
+      if (chatContainer) chatContainer.dataset.room = defaultBtn.dataset.agent;
+    }
     await refreshActiveAgent();
 
     // Sidebar toggle

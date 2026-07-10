@@ -14,7 +14,7 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -48,32 +48,59 @@ class ChatMessage(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     role: Role
-    content: str
+    content: str = ""  # допустимо пустое значение, если есть tool_calls
     agent: Optional[AgentName] = None  # кто сгенерировал (для логов)
     timestamp: float = Field(default_factory=time.time)
     # Tool-calling
     tool_call_id: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
+    # Имя функции для tool-результата (нужно Gemini, требует functionResponse.name).
+    # Не используется OpenAI/NVIDIA провайдерами; agent-цикл проставляет его
+    # при сериализации результатов tools.js-порта в историю.
+    name: Optional[str] = None
     # Метаданные (для дебага, не уходят в LLM)
     meta: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("content")
     @classmethod
-    def _content_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("content must not be empty")
-        return v
+    def _content_default_for_empty(cls, v):
+        # Поле content теперь может быть пустой строкой — это допустимо
+        # для assistant-сообщений, у которых есть tool_calls (OpenAI /
+        # Ollama convention: при наличии tool_calls content может быть "").
+        # Реальная проверка непустоты делается в model_validator
+        # _content_required_unless_tools, который видит ВСЕ поля сразу.
+        return v if v is not None else ""
+
+    @model_validator(mode="after")
+    def _content_required_unless_tools(self):
+        # Финальная проверка content: пустой content допустим только если
+        # у сообщения есть tool_calls. Иначе — ValueError.
+        if not self.tool_calls:
+            if not self.content or not str(self.content).strip():
+                raise ValueError("content must not be empty")
+        return self
 
     def to_llm_dict(self) -> Dict[str, Any]:
         """
         Сериализация для LLM API.
         Содержит только то, что понимает OpenAI-совместимый протокол.
         """
-        out: Dict[str, Any] = {"role": self.role.value, "content": self.content}
+        out: Dict[str, Any] = {"role": self.role.value}
+        # Если есть tool_calls — content может быть пустым/null
+        # (Ollama и OpenAI принимают и "", и null в этом случае).
+        if self.content or not self.tool_calls:
+            out["content"] = self.content
+        else:
+            out["content"] = ""
         if self.tool_call_id:
             out["tool_call_id"] = self.tool_call_id
         if self.tool_calls:
             out["tool_calls"] = self.tool_calls
+        # `name` нужен только в tool-сообщениях, чтобы Gemini (и потенциально
+        # OpenAI strict mode) знали, КАКАЯ функция выполнилась. Прочие роли
+        # это поле игнорируют.
+        if self.name and self.role == Role.TOOL:
+            out["name"] = self.name
         return out
 
 

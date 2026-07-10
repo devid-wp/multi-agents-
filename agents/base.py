@@ -53,6 +53,13 @@ class AgentContext:
     # выполненный в рамках этого прогона. Executor использует для
     # финального отчёта; Planner/Critic игнорируют.
     tool_outcomes: List[ToolResult] = field(default_factory=list)
+    # Опциональный Cline-style tool manager (см. `trinity.tools.manager`).
+    # Если задан — Agent маршрутизирует вызовы 6 «cline-инструментов»
+    # (read_files / search_codebase / run_commands / fetch_web_content /
+    # editor / apply_patch) через него, а не через `tools`. Это нужно для
+    # провайдеров, которые передают tool-calls в формате functionCall
+    # (Gemini и т.п.) и не понимают Cline-style нативный формат.
+    cline_tool_manager: Optional[Any] = None
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -92,6 +99,33 @@ class Agent(abc.ABC):
                 ctx.emit(event)
             except Exception as e:  # noqa: BLE001
                 log.warning("emit failed: %s", e)
+
+    def _pick_tool_schemas(self, ctx: AgentContext) -> Optional[List[Dict[str, Any]]]:
+        """
+        Выбирает, какой набор схем отправить в LLM.
+
+        Приоритет:
+          1. Если у контекста есть `cline_tool_manager` — отдаём его
+             OpenAI-style schemas (Cline-порт 6 инструментов). Это нужно
+             для провайдеров типа Gemini, которые отдают functionCall.
+          2. Иначе — старые `ctx.tools.list_schemas()` (Cline-style
+             execute_bash / read_file / write_file / …).
+          3. None, если ни того, ни другого нет.
+        """
+        mgr = getattr(ctx, "cline_tool_manager", None)
+        if mgr is not None:
+            try:
+                schemas = mgr.openai_tools()
+                if schemas:
+                    return schemas
+            except Exception as e:  # noqa: BLE001
+                log.warning("cline_tool_manager.openai_tools() failed: %s", e)
+        if self.tools is not None:
+            try:
+                return self.tools.list_schemas()
+            except Exception as e:  # noqa: BLE001
+                log.warning("ToolRegistry.list_schemas() failed: %s", e)
+        return None
 
     async def _call_llm(
         self,
@@ -243,14 +277,22 @@ class Agent(abc.ABC):
         """
         Выполняет tool-calls и эмитит события.
 
+        Routing:
+          1. Если у `ctx.cline_tool_manager` есть этот tool → идём через
+             Python-порт `trinity.tools.executors`. Это основной путь для
+             Gemini-провайдеров (functionCall-формат).
+          2. Иначе — старый путь через `ctx.tools` (ToolRegistry с Cline-style
+             набором execute_bash / read_file / write_file / …).
+
         Дополнительно накапливает результаты в ctx.tool_outcomes — это
         «боковая» лента для Executor-а, чтобы он мог сформировать
         финальный отчёт на основе реальных tool-результатов.
         """
         results: List[ToolResult] = []
+        mgr = getattr(ctx, "cline_tool_manager", None)
         for call in tool_calls:
             self._emit(ctx, ProgressEvent(kind="tool_call", agent=self.name, tool=call))
-            result = await self.tools.execute(call, workspace=ctx.tools.workspace)
+            result = await self._dispatch_tool(ctx, call, mgr=mgr)
             self._emit(ctx, ProgressEvent(kind="tool_result", agent=self.name, result=result))
             # Накапливаем для post-processing (Executor → отчёт)
             try:
@@ -262,6 +304,90 @@ class Agent(abc.ABC):
                 pass
             results.append(result)
         return results
+
+    async def _dispatch_tool(
+        self,
+        ctx: AgentContext,
+        call: ToolCall,
+        *,
+        mgr: Optional[Any],
+    ) -> ToolResult:
+        """
+        Маршрутизация ОДНОГО tool-call-а в нужный backend.
+
+        - Если `mgr` задан И его список 6 имён покрывает `call.name` —
+          вызываем Python-executor из `trinity.tools.executors.dispatch`
+          и оборачиваем результат в ToolResult. Имя функции прокинем
+          в ToolResult.name, чтобы Gemini получил functionResponse.name.
+        - Иначе — старый путь через `ctx.tools.execute(...)`.
+        """
+        cline_names: Optional[List[str]] = None
+        if mgr is not None:
+            try:
+                cline_names = mgr.list_tool_names()
+            except Exception:  # noqa: BLE001
+                cline_names = None
+        if mgr is not None and cline_names and call.name in cline_names:
+            try:
+                cline_results = await mgr.run(call.name, call.arguments or {})
+            except Exception as e:  # noqa: BLE001
+                log.exception("cline_tool_manager.run failed for %s", call.name)
+                return ToolResult(
+                    tool_call_id=call.id,
+                    name=call.name,
+                    success=False,
+                    output="",
+                    error=f"{type(e).__name__}: {e}",
+                    duration_ms=0,
+                )
+            # Берём первый результат (для single-input tools вроде
+            # editor/apply_patch) либо склеиваем всё в один текст для
+            # batch-input tools (read_files/search_codebase/run_commands).
+            if not cline_results:
+                return ToolResult(
+                    tool_call_id=call.id,
+                    name=call.name,
+                    success=True,
+                    output="(empty result)",
+                    error=None,
+                    duration_ms=0,
+                )
+            success = all(r.success for r in cline_results)
+            errors = [r for r in cline_results if r.error]
+            if errors:
+                error_text = "\n".join(
+                    f"{r.query}: {r.error}" for r in errors
+                )
+            else:
+                error_text = None
+            if len(cline_results) == 1:
+                r = cline_results[0]
+                body = r.result if r.success else (r.error or "")
+                if isinstance(body, dict):
+                    body = json.dumps(body, ensure_ascii=False)
+                return ToolResult(
+                    tool_call_id=call.id,
+                    name=call.name,
+                    success=success,
+                    output=str(body) if body is not None else "",
+                    error=error_text,
+                    duration_ms=0,
+                )
+            # multiple — format uniformly
+            text = mgr.format_tool_response(call.name, cline_results) \
+                if hasattr(mgr, "format_tool_response") else \
+                "\n\n".join(
+                    (r.result if r.success else (r.error or "")) for r in cline_results
+                )
+            return ToolResult(
+                tool_call_id=call.id,
+                name=call.name,
+                success=success,
+                output=text,
+                error=error_text,
+                duration_ms=0,
+            )
+        return await self.tools.execute(call, workspace=ctx.tools.workspace)
 
     # ── основной цикл ──────────────────────────────────────────────
     async def run(self, ctx: AgentContext) -> ChatMessage:
@@ -285,7 +411,7 @@ class Agent(abc.ABC):
         messages.append(ChatMessage(role=Role.USER, content=ctx.task, agent=self.name))
 
         # Схемы инструментов (если есть)
-        tool_schemas = self.tools.list_schemas() if self.tools else None
+        tool_schemas = self._pick_tool_schemas(ctx)
 
         final: Optional[ChatMessage] = None
         for iteration in range(ctx.max_tool_iterations):
@@ -353,10 +479,13 @@ class Agent(abc.ABC):
             # Выполняем и накапливаем результаты
             results = await self._run_tools(ctx, tc_objs)
             for call, res in zip(tc_objs, results):
+                # `name` нужен Gemini, чтобы сформировать functionResponse
+                # с правильным полем `name` (требование API).
                 messages.append(ChatMessage(
                     role=Role.TOOL,
                     content=res.output if res.success else f"ERROR: {res.error}",
                     tool_call_id=call.id,
+                    name=res.name or call.name,
                 ))
         else:
             # Цикл завершился без «без-tool» ответа — берём последний

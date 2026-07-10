@@ -551,8 +551,9 @@ class OllamaClient(BaseLLMClient):
     Поддерживает как /api/chat (стриминг), так и обычный режим.
     """
 
-    def __init__(self, base_url: str = "http://localhost:11434"):
+    def __init__(self, base_url: str = "http://localhost:11434", default_model: Optional[str] = None):
         self._base_url = base_url.rstrip("/")
+        self._default_model = default_model or ""
         self._timeout = settings.llm_timeout_seconds
 
     async def list_models(self) -> List[str]:
@@ -579,7 +580,7 @@ class OllamaClient(BaseLLMClient):
     ) -> ChatMessage:
         """Один запрос → один ответ. Для Executor (часто вызывает tools)."""
         payload: Dict[str, Any] = {
-            "model": model,
+            "model": model or self._default_model,
             "messages": [m.to_llm_dict() for m in messages],
             "stream": False,
             "options": {
@@ -597,7 +598,10 @@ class OllamaClient(BaseLLMClient):
                     json=payload,
                 )
             except httpx.HTTPError as e:
-                raise LLMError(f"Ollama network error: {e}") from e
+                # httpx.ReadTimeout / ConnectError и т.п. имеют пустой str();
+                # показываем имя класса, чтобы оператор сразу видел причину.
+                detail = str(e) or type(e).__name__
+                raise LLMError(f"Ollama network error ({type(e).__name__}): {detail}") from e
 
         if resp.status_code != 200:
             raise LLMError(
@@ -681,7 +685,21 @@ class GoogleGeminiClient(BaseLLMClient):
     ) -> ChatMessage:
         # Mapping rules
         system_instruction = None
-        contents = []
+        contents: List[Dict[str, Any]] = []
+
+        # ── Сборка tool-ответов: Gemini требует, чтобы все
+        # functionResponse-ы шли В ОДНОМ user-message, причём сразу после
+        # model-сообщения, содержащего соответствующие functionCall. Идём по
+        # `messages` и схлопываем подряд идущие TOOL-роли в один
+        # user-блок с parts=[{functionResponse: ...}, ...].
+        pending_tool_parts: List[Dict[str, Any]] = []
+
+        def _flush_tool_parts() -> None:
+            """Сбрасывает накопленные functionResponse в отдельный user-блок."""
+            nonlocal pending_tool_parts
+            if pending_tool_parts:
+                contents.append({"role": "user", "parts": pending_tool_parts})
+                pending_tool_parts = []
 
         for m in messages:
             if m.role == "system":
@@ -690,16 +708,19 @@ class GoogleGeminiClient(BaseLLMClient):
                     system_instruction = {"parts": [{"text": m.content}]}
                 else:
                     system_instruction["parts"].append({"text": m.content})
+                # Если system встретился после tool-сообщений — закрываем буфер.
+                _flush_tool_parts()
             elif m.role == "assistant":
-                # assistant -> model
-                parts = []
+                # Сначала закроем накопленные tool-ответы.
+                _flush_tool_parts()
+                parts: List[Dict[str, Any]] = []
                 if m.content:
                     parts.append({"text": m.content})
                 if m.tool_calls:
                     for tc in m.tool_calls:
                         # Fallback parsing for tool_calls format (dict or ToolCall obj)
                         func_name = ""
-                        func_args = {}
+                        func_args: Dict[str, Any] = {}
                         if isinstance(tc, dict):
                             func = tc.get("function", {})
                             func_name = func.get("name", "")
@@ -711,7 +732,7 @@ class GoogleGeminiClient(BaseLLMClient):
                                 args_raw = getattr(func, "arguments", {})
                             else:
                                 continue
-                                
+
                         if isinstance(args_raw, str):
                             try:
                                 func_args = json.loads(args_raw)
@@ -728,9 +749,42 @@ class GoogleGeminiClient(BaseLLMClient):
                         })
                 if parts:
                     contents.append({"role": "model", "parts": parts})
+            elif m.role == "tool":
+                # Tool-результат → functionResponse-часть. Gemini требует `name`,
+                # поэтому тянем его из ChatMessage.name (проставляется в
+                # agent-цикле при сериализации результатов tools.js-порта).
+                func_name = m.name or ""
+                if not func_name:
+                    # Попробуем поднять имя из tool_call_id; если не вышло —
+                    # логируем warning, но всё равно отправляем (с пустым name),
+                    # чтобы цикл не упал.
+                    log.warning(
+                        "Tool message without function name (tool_call_id=%s) — "
+                        "Gemini may reject. Set ChatMessage.name when serialising.",
+                        m.tool_call_id,
+                    )
+                # `response` — это объект, который отдаётся модели. Кладём туда
+                # текст (output) и явный success-флаг, чтобы LLM мог отличить
+                # ошибку от штатного результата.
+                response_payload: Dict[str, Any] = {
+                    "output": m.content or "",
+                }
+                # Если content выглядит как "ERROR: ..." — прокинем отдельно.
+                if isinstance(m.content, str) and m.content.startswith("ERROR:"):
+                    response_payload["error"] = m.content
+                pending_tool_parts.append({
+                    "functionResponse": {
+                        "name": func_name,
+                        "response": response_payload,
+                    }
+                })
             else:
-                # user
+                # user / другие
+                _flush_tool_parts()
                 contents.append({"role": "user", "parts": [{"text": m.content}]})
+
+        # Закрыть буфер tool-ответов в конце.
+        _flush_tool_parts()
 
         payload: Dict[str, Any] = {
             "contents": contents,
@@ -744,15 +798,36 @@ class GoogleGeminiClient(BaseLLMClient):
             payload["systemInstruction"] = system_instruction
 
         if tools:
-            # Convert standard OpenAI tools to Gemini format
-            gemini_tools = []
+            # Поддерживаем оба формата на входе:
+            #   1) OpenAI-style: [{"type": "function", "function": {name, description, parameters}}, ...]
+            #   2) Уже-готовый Gemini: [{"functionDeclarations": [...]}, ...]
+            # Это позволяет провайдеру принять и `mgr.openai_tools()`,
+            # и `mgr.gemini_tools_payload()` без адаптеров.
+            gemini_tools: List[Dict[str, Any]] = []
             for t in tools:
+                if not isinstance(t, dict):
+                    continue
                 if t.get("type") == "function":
                     func = t.get("function", {})
                     gemini_tools.append({
                         "name": func.get("name", ""),
                         "description": func.get("description", ""),
-                        "parameters": func.get("parameters", {})
+                        "parameters": func.get("parameters", {}),
+                    })
+                elif "functionDeclarations" in t:
+                    for fd in t["functionDeclarations"] or []:
+                        if isinstance(fd, dict):
+                            gemini_tools.append({
+                                "name": fd.get("name", ""),
+                                "description": fd.get("description", ""),
+                                "parameters": fd.get("parameters", {}),
+                            })
+                elif "name" in t and "parameters" in t:
+                    # Уже плоский declaration — пропускаем как есть.
+                    gemini_tools.append({
+                        "name": t.get("name", ""),
+                        "description": t.get("description", ""),
+                        "parameters": t.get("parameters", {}),
                     })
             if gemini_tools:
                 payload["tools"] = [{"functionDeclarations": gemini_tools}]
@@ -802,6 +877,142 @@ class GoogleGeminiClient(BaseLLMClient):
                     "function": {
                         "name": fc.get("name", ""),
                         "arguments": args_str
+                    }
+                })
+
+        return ChatMessage(
+            role="assistant",
+            content=text,
+            tool_calls=tool_calls if tool_calls else None
+        )
+
+# ───────────────────────────────────────────────────────────────────
+# Anthropic Client
+# ───────────────────────────────────────────────────────────────────
+class AnthropicClient(BaseLLMClient):
+    """Клиент для Anthropic Claude API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        timeout: Optional[float] = None,
+    ) -> None:
+        if not api_key or not api_key.strip():
+            raise LLMError("Anthropic API key is missing")
+        self.api_key = api_key.strip()
+        self._timeout = timeout or settings.llm_timeout_seconds
+        self.base_url = "https://api.anthropic.com/v1/messages"
+
+    @with_retry_and_circuit_breaker()
+    async def chat(
+        self,
+        *,
+        model: str,
+        messages: List[ChatMessage],
+        temperature: float = 0.6,
+        max_tokens: int = 4096,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        agent: Optional[AgentName] = None,
+    ) -> ChatMessage:
+        
+        system_instruction = ""
+        anthropic_msgs = []
+        
+        for m in messages:
+            if m.role == "system":
+                system_instruction += m.content + "\n"
+            elif m.role == "assistant":
+                content_blocks = []
+                if m.content:
+                    content_blocks.append({"type": "text", "text": m.content})
+                if m.tool_calls:
+                    for tc in m.tool_calls:
+                        func = tc.get("function", {}) if isinstance(tc, dict) else getattr(tc, "function", None)
+                        if not func:
+                            continue
+                        name = func.get("name", "") if isinstance(func, dict) else getattr(func, "name", "")
+                        args_raw = func.get("arguments", {}) if isinstance(func, dict) else getattr(func, "arguments", {})
+                        
+                        func_args = {}
+                        if isinstance(args_raw, str):
+                            try:
+                                func_args = json.loads(args_raw)
+                            except json.JSONDecodeError:
+                                pass
+                        else:
+                            func_args = args_raw
+                            
+                        # Generate a pseudo ID for anthropic's tool_use
+                        tool_use_id = f"call_{hash(name + str(func_args))}"
+                        content_blocks.append({
+                            "type": "tool_use",
+                            "id": tool_use_id,
+                            "name": name,
+                            "input": func_args
+                        })
+                if content_blocks:
+                    anthropic_msgs.append({"role": "assistant", "content": content_blocks})
+            else:
+                # user
+                anthropic_msgs.append({"role": "user", "content": m.content})
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": anthropic_msgs
+        }
+        
+        if system_instruction:
+            payload["system"] = system_instruction.strip()
+            
+        if tools:
+            anthropic_tools = []
+            for t in tools:
+                if t.get("type") == "function":
+                    func = t.get("function", {})
+                    anthropic_tools.append({
+                        "name": func.get("name", ""),
+                        "description": func.get("description", ""),
+                        "input_schema": func.get("parameters", {})
+                    })
+            if anthropic_tools:
+                payload["tools"] = anthropic_tools
+
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            try:
+                resp = await client.post(
+                    self.base_url,
+                    json=payload,
+                    headers=headers
+                )
+            except httpx.HTTPError as exc:
+                raise LLMError(f"Anthropic request failed: {exc}") from exc
+
+        if resp.status_code != 200:
+            raise LLMError(f"Anthropic API {resp.status_code}: {resp.text[:500]}")
+
+        data = resp.json()
+        
+        text = ""
+        tool_calls = []
+        
+        for block in data.get("content", []):
+            if block.get("type") == "text":
+                text += block.get("text", "")
+            elif block.get("type") == "tool_use":
+                args_dict = block.get("input", {})
+                tool_calls.append({
+                    "type": "function",
+                    "function": {
+                        "name": block.get("name", ""),
+                        "arguments": json.dumps(args_dict)
                     }
                 })
 

@@ -122,23 +122,32 @@ class ExecutorAgent(Agent):
 
         summary = self._format_tool_summary(ctx.tool_outcomes)
         try:
-            report_msg = await self._call_llm(
-                messages=[
-                    ChatMessage(role=Role.SYSTEM, content=self.SYSTEM_PROMPT),
-                    ChatMessage(role=Role.USER, content=ctx.task),
-                    ChatMessage(role=Role.ASSISTANT, content=previous_content or ""),
-                    ChatMessage(
-                        role=Role.SYSTEM,
-                        content=(
-                            "Сводка выполненных tool-вызовов:\n"
-                            f"{summary}\n\n"
-                            "Сформулируй КРАТКИЙ финальный отчёт пользователю "
-                            "от первого лица: что сделано, какие файлы созданы/изменены, "
-                            "ключевые пути и размеры. Без воды, без повторов исходного "
-                            "ответа. На русском."
-                        ),
+            # Собираем messages условно: pydantic-валидатор ChatMessage
+            # запрещает пустой content, поэтому добавляем assistant-тур
+            # только если previous_content непустой.
+            report_messages: list = [
+                ChatMessage(role=Role.SYSTEM, content=self.SYSTEM_PROMPT),
+                ChatMessage(role=Role.USER, content=ctx.task),
+            ]
+            if previous_content and previous_content.strip():
+                report_messages.append(
+                    ChatMessage(role=Role.ASSISTANT, content=previous_content.strip())
+                )
+            report_messages.append(
+                ChatMessage(
+                    role=Role.SYSTEM,
+                    content=(
+                        "Сводка выполненных tool-вызовов:\n"
+                        f"{summary}\n\n"
+                        "Сформулируй КРАТКИЙ финальный отчёт пользователю "
+                        "от первого лица: что сделано, какие файлы созданы/изменены, "
+                        "ключевые пути и размеры. Без воды, без повторов исходного "
+                        "ответа. На русском."
                     ),
-                ],
+                )
+            )
+            report_msg = await self._call_llm(
+                messages=report_messages,
                 temperature=0.3,
                 max_tokens=1024,
                 tool_schemas=None,  # финальная сводка — tool-ы уже не нужны
