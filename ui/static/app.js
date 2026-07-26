@@ -29,6 +29,7 @@
     settingsGet:   "/api/settings",
     settingsSet:   "/api/settings",
     health:        "/api/health",
+    rooms:         "/api/rooms",
   };
 
   const SSE_BACKOFF_MS = [500, 1000, 2000, 4000, 5000];  // capped at 5s
@@ -60,6 +61,7 @@
     },
     selectedAgent: "planner",
     selectedStrategy: "planner",  // matches first active agent-btn
+    roomId: "general",
     activeAgent: null,
     toolState: {
       current: null,
@@ -927,7 +929,12 @@
     // user message bubble
     renderBridgeEvent({ kind: "user", agent: "user", content: text, timestamp: Date.now() / 1000 });
 
-    const payload = { message: text, strategy: state.selectedStrategy || "auto", session_id: SESSION_ID };
+    const payload = {
+      message: text,
+      strategy: state.selectedStrategy || "auto",
+      session_id: SESSION_ID,
+      room_id: state.roomId,
+    };
     const creds = buildEphemeralCreds();
     if (creds) payload.ephemeral_credentials = creds;
 
@@ -1081,6 +1088,7 @@
         setActiveAgentButton(agent);
         setActiveStrategy(strategy);
         state.selectedAgent = agent;
+        state.roomId = button.dataset.roomId || "general";
         
         // Room filtering
         const chatContainer = $("#chat-container");
@@ -1100,6 +1108,7 @@
       setActiveStrategy(defaultBtn.dataset.strategy || "auto");
       const chatContainer = $("#chat-container");
       if (chatContainer) chatContainer.dataset.room = defaultBtn.dataset.agent;
+      state.roomId = defaultBtn.dataset.roomId || "general";
     }
     await refreshActiveAgent();
 

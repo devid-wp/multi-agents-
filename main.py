@@ -57,6 +57,7 @@ from core.models import (
     SettingsResponse,
 )
 from core.session import get_credentials, mask_key, save_credentials
+from core.rooms import RoomStore
 
 # Делаем корень проекта доступным для импорта `core`, `agents`, `tools`
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -147,6 +148,30 @@ ACTIVE_AGENT: AgentName = AgentName.PLANNER
 
 class AgentSwitchPayload(BaseModel):
     agent: AgentName
+
+
+class RoomCreatePayload(BaseModel):
+    id: str
+    name: str
+    strategy: str = "auto"
+
+
+def _room_store() -> RoomStore:
+    return RoomStore(settings.workspace_dir)
+
+
+@app.get("/api/rooms")
+async def list_rooms():
+    return {"rooms": _room_store().list()}
+
+
+@app.post("/api/rooms", status_code=201)
+async def create_room(payload: RoomCreatePayload):
+    try:
+        room = _room_store().create(payload.id, payload.name, payload.strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return room
 
 
 @app.get("/api/agents/active")
@@ -288,7 +313,7 @@ async def health():
 # History API (загрузка сохранённой истории диалога)
 # ───────────────────────────────────────────────────────────────────
 @app.get("/api/chat/history")
-async def get_history(session_id: str = Query("")):
+async def get_history(session_id: str = Query(""), room_id: str = Query("general")):
     """
     Возвращает сохранённую историю диалога для данной сессии.
     Фронтенд вызывает этот эндпоинт при загрузке страницы, чтобы
@@ -301,10 +326,14 @@ async def get_history(session_id: str = Query("")):
         return {"ok": False, "messages": [], "error": "session_id is required"}
     
     hm = HistoryManager(workspace_dir=settings.workspace_dir)
-    messages = hm.load(session_id)
+    if not _room_store().exists(room_id):
+        raise HTTPException(status_code=404, detail="room not found")
+    scoped_session_id = RoomStore.session_id(session_id, room_id)
+    messages = hm.load(scoped_session_id)
     return {
         "ok": True,
         "session_id": session_id,
+        "room_id": room_id,
         "messages": [m.model_dump(mode="json") for m in messages]
     }
 
@@ -345,7 +374,10 @@ async def chat(request: Request, payload: ChatRequest):
     # Импортируем здесь, чтобы избежать циклических импортов на старте
     from agents.manager import AgentManager
 
-    manager = AgentManager(creds=creds, session_id=payload.session_id)
+    if not _room_store().exists(payload.room_id):
+        raise HTTPException(status_code=404, detail="room not found")
+    scoped_session_id = RoomStore.session_id(payload.session_id or "anonymous", payload.room_id)
+    manager = AgentManager(creds=creds, session_id=scoped_session_id)
 
     async def event_stream() -> AsyncGenerator[str, None]:
         # Сначала — readiness report

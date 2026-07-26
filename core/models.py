@@ -142,6 +142,34 @@ class SettingsPayload(BaseModel):
     executor: Optional[AgentProviderConfig] = None
     critic: Optional[AgentProviderConfig] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        migrated = dict(data)
+        if "planner" not in migrated and migrated.get("planner_api_key"):
+            migrated["planner"] = {
+                "provider": "nvidia",
+                "api_key": migrated.get("planner_api_key"),
+                "base_url": migrated.get("planner_base_url"),
+                "model_name": migrated.get("planner_model") or "abacusai/dracarys-llama-3.1-70b-instruct",
+            }
+        if "critic" not in migrated and migrated.get("critic_api_key"):
+            migrated["critic"] = {
+                "provider": "nvidia",
+                "api_key": migrated.get("critic_api_key"),
+                "base_url": migrated.get("critic_base_url"),
+                "model_name": migrated.get("critic_model") or "meta/llama-3.1-70b-instruct",
+            }
+        if "executor" not in migrated and migrated.get("ollama_url"):
+            migrated["executor"] = {
+                "provider": "ollama",
+                "base_url": migrated.get("ollama_url"),
+                "model_name": migrated.get("executor_model") or "qwen2.5-coder:1.5b",
+            }
+        return migrated
+
 
 class AgentProviderResponse(BaseModel):
     provider: str
@@ -164,6 +192,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=20_000)
     # Опционально: идентификатор сессии для персистентности истории
     session_id: Optional[str] = None
+    room_id: str = Field(default="general", pattern=r"^[a-z0-9][a-z0-9_-]{0,39}$")
     # Опционально: пользователь может сразу прислать кредентиалы,
     # не сохраняя их в сессии (для быстрых тестов)
     ephemeral_credentials: Optional[SettingsPayload] = None
