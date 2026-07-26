@@ -52,11 +52,13 @@
     <header id="topbar">
       <button id="btn-sidebar-toggle" class="icon-btn" title="Toggle workspace panel">☰</button>
       <span class="logo">⬢ Trinity</span>
+      <div class="room-controls">
+        <label for="room-select" class="sr-only">Chat room</label>
+        <select id="room-select" title="Chat room"><option value="general">General</option></select>
+        <button id="btn-new-room" type="button" class="icon-btn" title="Create room">+ Room</button>
+      </div>
       <div class="agent-toolbar">
-        <button type="button" class="agent-btn active status-ready" data-agent="all" data-room-id="general" data-strategy="auto" title="Shared room">
-          <span class="status-dot"></span>General
-        </button>
-        <button type="button" class="agent-btn status-ready" data-agent="planner" data-strategy="planner" title="Planner only — plan without executing">
+        <button type="button" class="agent-btn active status-ready" data-agent="planner" data-strategy="planner" title="Planner only — plan without executing">
           <span class="status-dot"></span>Planner
         </button>
         <button type="button" class="agent-btn status-ready" data-agent="critic" data-strategy="auto" title="Auto — full pipeline: Plan → Review → Execute">

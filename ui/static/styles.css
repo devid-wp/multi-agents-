@@ -383,6 +383,20 @@ header#topbar {
   margin-left: auto;
 }
 
+.room-controls { display: flex; align-items: center; gap: 6px; }
+.room-controls select {
+  max-width: 180px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
 .agent-btn {
   display: inline-flex;
   align-items: center;

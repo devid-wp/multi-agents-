@@ -156,6 +156,57 @@
       </article>`).join("");
   }
 
+  async function loadRooms() {
+    const select = $("#room-select");
+    if (!select) return;
+    try {
+      const response = await fetch(ENDPOINTS.rooms, { cache: "no-store" });
+      if (!response.ok) throw new Error(`Rooms HTTP ${response.status}`);
+      const rooms = (await response.json()).rooms || [];
+      select.innerHTML = rooms.map((room) =>
+        `<option value="${escapeHtml(room.id)}">${escapeHtml(room.name)}</option>`
+      ).join("");
+      if (!rooms.some((room) => room.id === state.roomId)) state.roomId = "general";
+      select.value = state.roomId;
+    } catch (error) {
+      renderBridgeEvent({
+        kind: "error", agent: "manager",
+        content: `Could not load rooms: ${error}`,
+        timestamp: Date.now() / 1000,
+      });
+    }
+  }
+
+  async function createRoom() {
+    const name = window.prompt("Room name");
+    if (!name || !name.trim()) return;
+    const id = name.trim().toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40);
+    if (!id) throw new Error("Use at least one Latin letter or digit in the room name.");
+    const response = await fetch(ENDPOINTS.rooms, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, name: name.trim(), strategy: state.selectedStrategy || "auto" }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || `Room creation failed (${response.status})`);
+    }
+    state.roomId = id;
+    await loadRooms();
+    clearBridge();
+    await loadSessionHistory();
+  }
+
+  async function switchRoom(roomId) {
+    if (state.running || !roomId || roomId === state.roomId) return;
+    state.roomId = roomId;
+    clearBridge();
+    await loadSessionHistory();
+  }
+
   async function decideChange(id, approve) {
     const response = await fetch(`${ENDPOINTS.changes}/${encodeURIComponent(id)}/decision`, {
       method: "POST",
@@ -259,6 +310,10 @@
     const controller = new AbortController();
     state.abortController = controller;
     let reader = null;
+    const timeoutId = setTimeout(() => {
+      onEvent({ kind: "error", content: "Request timed out after 3 minutes. Try a smaller task." });
+      controller.abort();
+    }, 180_000);
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -317,6 +372,7 @@
         onEvent({ kind: "error", content: String(err) });
       }
     } finally {
+      clearTimeout(timeoutId);
       state.abortController = null;
     }
     return {
@@ -1097,6 +1153,7 @@
   // ════════════════════════════════════════════════════════════
   async function boot() {
     await refreshHealth();
+    await loadRooms();
     await refreshChanges();
     $("#change-proposals")?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-change-action]");
@@ -1104,6 +1161,12 @@
       if (!button || !card) return;
       void decideChange(card.dataset.proposal, button.dataset.changeAction === "approve")
         .catch((error) => window.alert(error.message));
+    });
+    $("#room-select")?.addEventListener("change", (event) => {
+      void switchRoom(event.target.value);
+    });
+    $("#btn-new-room")?.addEventListener("click", () => {
+      void createRoom().catch((error) => window.alert(error.message));
     });
     // Settings
     settingsForm.addEventListener("submit", saveSettings);
@@ -1149,7 +1212,6 @@
         setActiveAgentButton(agent);
         setActiveStrategy(strategy);
         state.selectedAgent = agent;
-        state.roomId = button.dataset.roomId || "general";
         
         // Room filtering
         const chatContainer = $("#chat-container");
@@ -1169,7 +1231,6 @@
       setActiveStrategy(defaultBtn.dataset.strategy || "auto");
       const chatContainer = $("#chat-container");
       if (chatContainer) chatContainer.dataset.room = defaultBtn.dataset.agent;
-      state.roomId = defaultBtn.dataset.roomId || "general";
     }
     await refreshActiveAgent();
 
@@ -1215,15 +1276,34 @@
 
   async function loadSessionHistory() {
     try {
-      const resp = await fetch(`${ENDPOINTS.chatHistory}?session_id=${encodeURIComponent(SESSION_ID)}`);
+      const query = new URLSearchParams({ session_id: SESSION_ID, room_id: state.roomId });
+      const resp = await fetch(`${ENDPOINTS.chatHistory}?${query}`);
       if (!resp.ok) return;
       const data = await resp.json();
       if (!data.ok || !data.messages || data.messages.length === 0) return;
 
-      // Отображаем панель восстановления
+      data.messages.forEach((message) => {
+        if (!message.content || message.role === "system") return;
+        if (message.role === "user") {
+          renderBridgeEvent({
+            kind: "user", agent: "user", content: message.content,
+            timestamp: message.timestamp,
+          });
+        } else if (message.role === "assistant") {
+          renderBridgeEvent({
+            kind: "agent_message", agent: message.agent || "executor",
+            content: message.content, timestamp: message.timestamp,
+          });
+        } else {
+          renderBridgeEvent({
+            kind: "info", agent: "manager", content: message.content,
+            timestamp: message.timestamp,
+          });
+        }
+      });
       const historyBanner = document.createElement("div");
       historyBanner.className = "card chat-card info";
-      historyBanner.innerHTML = `<div class="meta"><span class="agent-tag system">system</span></div><div class="body">&#9679; Сессия восстановлена (${data.messages.length} сообщений из предыдущей сессии)</div>`;
+      historyBanner.innerHTML = `<div class="meta"><span class="agent-tag system">system</span></div><div class="body">Restored ${data.messages.length} messages from room ${escapeHtml(state.roomId)}</div>`;
       if (chatContainerEl) chatContainerEl.appendChild(historyBanner);
     } catch (e) {
       console.warn("loadSessionHistory failed:", e);
