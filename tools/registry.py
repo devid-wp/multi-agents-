@@ -23,11 +23,9 @@ from pydantic import BaseModel, ValidationError, create_model
 from core.diagnostics import diagnostics_bus
 from core.models import ToolCall, ToolResult
 from tools.base import Tool
-from tools.bash_tool import ExecuteBash
 from tools.exceptions import SecurityError, ToolValidationError
-from tools.file_tool import DeleteFile, ListDir, ReadFile, SearchInFile, WriteFile, ReplaceInFile, _safe_resolve
+from tools.file_tool import ListDir, ReadFile, SearchInFile, WriteFile, ReplaceInFile, _safe_resolve
 from tools.system_tool import GetSystemStatus
-from tools.git_tool import GitTool
 
 log = logging.getLogger("trinity.tools")
 
@@ -49,12 +47,9 @@ class ToolRegistry:
     def _register_defaults(self) -> None:
         """Регистрирует стандартный набор инструментов."""
         for tool in (
-            ExecuteBash(workspace=self.workspace),
-            GitTool(workspace=self.workspace),
             ReadFile(workspace=self.workspace),
             WriteFile(workspace=self.workspace),
             ReplaceInFile(workspace=self.workspace),
-            DeleteFile(workspace=self.workspace),
             SearchInFile(workspace=self.workspace),
             ListDir(workspace=self.workspace),
             GetSystemStatus(),

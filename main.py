@@ -115,6 +115,13 @@ def _validate_url(value: Optional[str]) -> Optional[str]:
 # ───────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if (
+        len(settings.session_secret) < 32
+        or settings.session_secret == "change-me-in-production-please-use-strong-secret"
+    ):
+        raise RuntimeError(
+            "SESSION_SECRET must be a unique random value of at least 32 characters"
+        )
     log.info("🚀 Trinity starting. workspace=%s", os.path.abspath(settings.workspace_dir))
     yield
     log.info("🛑 Trinity shutting down.")
@@ -128,6 +135,17 @@ app = FastAPI(
     version="0.3.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def localhost_only(request: Request, call_next):
+    host = request.client.host if request.client else ""
+    if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Trinity local alpha accepts localhost connections only"},
+        )
+    return await call_next(request)
 
 # Статика и шаблоны
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")

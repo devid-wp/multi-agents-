@@ -24,6 +24,7 @@ trinity_session
 *.log
 logs/
 workspace_sandbox/
+.trinity/
 
 # ─────────────────────────────────────────────────────────────────
 # IDE / редакторы

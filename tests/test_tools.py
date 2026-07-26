@@ -383,13 +383,13 @@ class TestLLMAndToolValidation:
         assert any(ev.get("tool") == "write_file" for ev in tool_events), tool_events
 
     @pytest.mark.asyncio
-    async def test_delete_file_registered(self, temp_workspace: Path) -> None:
-        """Реестр по умолчанию должен включать delete_file и search_in_file."""
+    async def test_release_registry_excludes_delete_file(self, temp_workspace: Path) -> None:
+        """Release registry keeps search but does not expose destructive delete."""
         from tools.registry import ToolRegistry
 
         reg = ToolRegistry(workspace=str(temp_workspace))
         names = reg.list_names()
-        assert "delete_file" in names
+        assert "delete_file" not in names
         assert "search_in_file" in names
 
 
