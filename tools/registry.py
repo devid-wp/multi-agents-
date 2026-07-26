@@ -179,6 +179,37 @@ class ToolRegistry:
                 duration_ms=0,
             )
 
+        if call.name in {"write_file", "replace_in_file"}:
+            from core.changes import ChangeStore
+            try:
+                args = self._validate_arguments(tool, call.arguments)
+                target = _safe_resolve(self.workspace, args["path"])
+                if call.name == "write_file":
+                    content = args["content"]
+                else:
+                    current = target.read_text(encoding="utf-8")
+                    if args["target_content"] not in current:
+                        raise ValueError("target_content was not found")
+                    content = current.replace(
+                        args["target_content"], args["replacement_content"], 1
+                    )
+                proposal = ChangeStore(self.workspace).propose(args["path"], content)
+                return ToolResult(
+                    tool_call_id=call.id,
+                    name=call.name,
+                    success=True,
+                    output=f"Approval required. Proposal ID: {proposal['id']}",
+                )
+            except Exception as exc:
+                return ToolResult(
+                    tool_call_id=call.id,
+                    name=call.name,
+                    success=False,
+                    output="",
+                    error=str(exc),
+                    duration_ms=0,
+                )
+
         t0 = time.perf_counter()
         try:
             validated_args = self._validate_arguments(tool, call.arguments)

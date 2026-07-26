@@ -30,6 +30,7 @@
     settingsSet:   "/api/settings",
     health:        "/api/health",
     rooms:         "/api/rooms",
+    changes:       "/api/changes",
   };
 
   const SSE_BACKOFF_MS = [500, 1000, 2000, 4000, 5000];  // capped at 5s
@@ -137,6 +138,33 @@
       pill.textContent = "Ollama · health unavailable";
       pill.className = "hardware-pill offline";
     }
+  }
+
+  async function refreshChanges() {
+    const panel = $("#change-proposals");
+    if (!panel) return;
+    const response = await fetch(ENDPOINTS.changes, { cache: "no-store" });
+    const changes = (await response.json()).changes || [];
+    const pending = changes.filter((item) => item.status === "pending");
+    panel.classList.toggle("hidden", pending.length === 0);
+    panel.innerHTML = pending.map((item) => `
+      <article class="change-proposal" data-proposal="${escapeHtml(item.id)}">
+        <div class="tool-status-title">Pending change · ${escapeHtml(item.path)}</div>
+        <pre>${escapeHtml(item.diff || "(empty diff)")}</pre>
+        <button type="button" data-change-action="approve">Approve</button>
+        <button type="button" data-change-action="reject">Reject</button>
+      </article>`).join("");
+  }
+
+  async function decideChange(id, approve) {
+    const response = await fetch(`${ENDPOINTS.changes}/${encodeURIComponent(id)}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approve }),
+    });
+    if (!response.ok) throw new Error((await response.json()).detail || "Decision failed");
+    await refreshChanges();
+    await loadWorkspaceTree();
   }
 
   // ════════════════════════════════════════════════════════════
@@ -979,6 +1007,7 @@
         const outcome = ev.result.success ? "complete" : "failed";
         updateToolLifecycleState(outcome, ev.result.output || ev.result.error || "Tool finished", ev.result.name || null);
         addDiagnosticEntry(ev);
+        if (String(ev.result.output || "").includes("Proposal ID:")) void refreshChanges();
       }
       if (ev.kind === "tool_execution") {
         addDiagnosticEntry(ev);
@@ -1068,6 +1097,14 @@
   // ════════════════════════════════════════════════════════════
   async function boot() {
     await refreshHealth();
+    await refreshChanges();
+    $("#change-proposals")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-change-action]");
+      const card = event.target.closest("[data-proposal]");
+      if (!button || !card) return;
+      void decideChange(card.dataset.proposal, button.dataset.changeAction === "approve")
+        .catch((error) => window.alert(error.message));
+    });
     // Settings
     settingsForm.addEventListener("submit", saveSettings);
     modal.addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === modal) closeSettings(); });

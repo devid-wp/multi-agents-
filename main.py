@@ -157,6 +157,10 @@ class RoomCreatePayload(BaseModel):
     strategy: str = "auto"
 
 
+class ChangeDecisionPayload(BaseModel):
+    approve: bool
+
+
 def _room_store() -> RoomStore:
     return RoomStore(settings.workspace_dir)
 
@@ -173,6 +177,21 @@ async def create_room(payload: RoomCreatePayload):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return room
+
+
+@app.get("/api/changes")
+async def list_changes():
+    from core.changes import ChangeStore
+    return {"changes": ChangeStore(settings.workspace_dir).list()}
+
+
+@app.post("/api/changes/{proposal_id}/decision")
+async def decide_change(proposal_id: str, payload: ChangeDecisionPayload):
+    from core.changes import ChangeStore
+    try:
+        return ChangeStore(settings.workspace_dir).decide(proposal_id, payload.approve)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/agents/active")
