@@ -2,8 +2,8 @@
 
 > Local alpha `0.3.0`. Запускайте только на `127.0.0.1` и направляйте
 > `WORKSPACE_DIR` на отдельную рабочую копию. Изменения файлов от агентов
-> требуют ручного подтверждения в UI, но `execute_bash`, `execute_git` и
-> `delete_file` остаются мощными локальными инструментами.
+> требуют ручного подтверждения в UI. Опасные `execute_bash`, `execute_git`
+> и `delete_file` отключены в release-профиле.
 
 ## Проверка alpha-релиза
 
@@ -166,7 +166,6 @@ $env:WORKSPACE_DIR  = "C:\Projects\my_project"
 | Порт 8000 занят | `.\start.ps1 -Port 9000` или: `netstat -ano | findstr :8000`, затем `taskkill /PID <pid> /F` |
 | Ollama не отвечает | Убедись, что Ollama запущена (иконка в трее), или запусти `ollama serve` в отдельном терминале |
 | `uvloop` ошибка при импорте | Нормально — uvloop только для Linux, на Windows asyncio работает нативно |
-| `git` не найден в `execute_git` | Установи [Git for Windows](https://git-scm.com/download/win) и перезапусти терминал |
 | Проблемы с кодировкой (кириллица в логах) | Добавь в начало PowerShell: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8` |
 
 ---
@@ -234,6 +233,10 @@ sudo loginctl enable-linger $USER    # жить после logout
 ---
 
 ## Инструменты ExecutorAgent
+
+В локальном release-профиле доступны только чтение, поиск, просмотр каталогов
+и подтверждаемые `write_file`/`replace_in_file`. Bash, Git и удаление файлов
+не регистрируются и не передаются модели.
 
 | Инструмент     | Назначение                                  |
 |----------------|---------------------------------------------|
