@@ -48,6 +48,8 @@ def env_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setenv("SESSION_SECRET", "test-secret-do-not-use-in-prod-0123456789abcdef")
     monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path))
+    from core.config import settings as app_settings
+    monkeypatch.setattr(app_settings, "workspace_dir", str(tmp_path))
     # Очищаем продовые ключи, если они случайно есть в env —
     # иначе тесты будут «протекать» в реальный NVIDIA.
     monkeypatch.delenv("PLANNER_API_KEY", raising=False)

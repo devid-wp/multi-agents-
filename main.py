@@ -616,7 +616,7 @@ def _walk_workspace(
             except OSError:
                 continue
             try:
-                rel = str(child.relative_to(workspace))
+                rel = child.relative_to(workspace).as_posix()
             except ValueError:
                 # Не внутри workspace (симлинк наружу) — пропускаем
                 continue
@@ -703,7 +703,7 @@ async def workspace_stream(request: Request):
                     if _should_ignore(p):
                         continue
                     try:
-                        rel = str(p.relative_to(workspace))
+                        rel = p.relative_to(workspace).as_posix()
                     except Exception as e:
                         log.warning("workspace watcher gen error: %s", e)
                         continue

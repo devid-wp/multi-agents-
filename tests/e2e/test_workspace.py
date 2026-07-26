@@ -94,7 +94,7 @@ async def test_tree_empty_path_equals_dot(
 # /api/workspace/stream (SSE)
 # ───────────────────────────────────────────────────────────────────
 async def test_workspace_stream_emits_create_event(
-    app_client: httpx.AsyncClient, temp_workspace: Path
+    live_server_url: str, temp_workspace: Path
 ) -> None:
     """
     Создаём файл во временной workspace и читаем 1–2 SSE-кадра из стрима.
@@ -107,6 +107,7 @@ async def test_workspace_stream_emits_create_event(
 
     target = temp_workspace / "new_file.txt"
     captured: list[dict] = []
+    app_client = httpx.AsyncClient(base_url=live_server_url, timeout=None)
 
     async with app_client.stream(
         "GET", "/api/workspace/stream"
@@ -134,7 +135,7 @@ async def test_workspace_stream_emits_create_event(
                         except json.JSONDecodeError:
                             continue
                         captured.append(ev)
-                        if len(captured) >= limit:
+                        if Path(ev.get("path", "")).name == "new_file.txt":
                             return
 
         try:
@@ -153,3 +154,4 @@ async def test_workspace_stream_emits_create_event(
     # Тип — один из {created, modified} (FS-наблюдатели не всегда отличают)
     types = {ev.get("type") for ev in captured}
     assert types & {"created", "modified"}, f"Не было create/modify: {types!r}"
+    await app_client.aclose()
