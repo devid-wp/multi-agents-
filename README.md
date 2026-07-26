@@ -1,5 +1,21 @@
 # Trinity — Multi-Agent System for autonomous development
 
+> Local alpha `0.3.0`. Запускайте только на `127.0.0.1` и направляйте
+> `WORKSPACE_DIR` на отдельную рабочую копию. Изменения файлов от агентов
+> требуют ручного подтверждения в UI, но `execute_bash`, `execute_git` и
+> `delete_file` остаются мощными локальными инструментами.
+
+## Проверка alpha-релиза
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Откройте `http://127.0.0.1:8000/ui/`. Проверьте общую комнату General,
+индикатор Ollama и карточку Preview/Approve перед применением изменения.
+Данные комнат, истории и предложений сохраняются локально внутри workspace.
+
 Мульти-агентная система на FastAPI, состоящая из трёх специализированных агентов,
 которые совместно решают задачи разработки: **планируют → критикуют → исполняют**.
 
@@ -97,7 +113,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 
 ```powershell
 # После установки Ollama скачать модель для Executor:
-ollama pull qwen2.5-coder:7b
+ollama pull qwen2.5-coder:1.5b
 
 # Проверить, что Ollama работает:
 Invoke-RestMethod http://localhost:11434/api/tags

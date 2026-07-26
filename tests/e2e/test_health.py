@@ -13,7 +13,9 @@ async def test_health_returns_ok(app_client: httpx.AsyncClient) -> None:
     r = await app_client.get("/api/health")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body == {"ok": True, "service": "trinity"}
+    assert body["ok"] is True
+    assert body["service"] == "trinity"
+    assert "ollama" in body
 
 
 async def test_root_redirects_to_ui(app_client: httpx.AsyncClient) -> None:

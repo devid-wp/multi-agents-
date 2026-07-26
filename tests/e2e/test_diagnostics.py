@@ -146,8 +146,11 @@ async def test_executor_agent_write_file_emits_tool_execution(
 
     result = await executor.run(ctx)
 
-    assert (temp_workspace / "test.txt").read_text(encoding="utf-8") == "hello"
-    assert "test.txt" in result.content
+    assert not (temp_workspace / "test.txt").exists()
+    from core.changes import ChangeStore
+    proposals = ChangeStore(str(temp_workspace)).list()
+    assert any(item["path"] == "test.txt" and item["status"] == "pending" for item in proposals)
+    assert "Proposal ID" in result.content
 
     history_after = diagnostics_bus.history(limit=100)
     tool_execution_events = [ev for ev in history_after if ev.get("kind") == "tool_execution"]
@@ -184,7 +187,7 @@ async def test_executor_agent_blocked_write_file_publishes_tool_execution(
 
     result = await executor.run(ctx)
 
-    assert "[BLOCKED]" in result.content or "заблокирован" in result.content
+    assert "outside workspace" in result.content
     history = diagnostics_bus.history(limit=100)
     assert any(ev.get("kind") == "tool_execution" and ev.get("tool") == "write_file" for ev in history), history
 
@@ -303,4 +306,3 @@ async def test_stream_does_not_send_history_to_new_subscribers(
     assert len(events) == 1, f"Ожидался ровно 1 кадр, получили {len(events)}: {events!r}"
     assert events[0]["agent"] == "critic"
     assert events[0]["tool"]["name"] == "read_file"
-
