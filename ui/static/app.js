@@ -116,6 +116,29 @@
     };
   }
 
+  async function refreshHealth() {
+    const pill = $("#ollama-status");
+    if (!pill) return;
+    try {
+      const response = await fetch(ENDPOINTS.health, { cache: "no-store" });
+      const data = await response.json();
+      const ollama = data.ollama || {};
+      if (!ollama.available) {
+        pill.textContent = `Ollama · offline — run: ${ollama.start_command || "ollama serve"}`;
+        pill.className = "hardware-pill offline";
+      } else if (!ollama.model_installed) {
+        pill.textContent = `Ollama · model missing — ${ollama.pull_command}`;
+        pill.className = "hardware-pill offline";
+      } else {
+        pill.textContent = `Ollama · ready · ${ollama.required_model}`;
+        pill.className = "hardware-pill online";
+      }
+    } catch {
+      pill.textContent = "Ollama · health unavailable";
+      pill.className = "hardware-pill offline";
+    }
+  }
+
   // ════════════════════════════════════════════════════════════
   // 4. SSE clients
   // ════════════════════════════════════════════════════════════
@@ -1044,6 +1067,7 @@
   // 10. boot()
   // ════════════════════════════════════════════════════════════
   async function boot() {
+    await refreshHealth();
     // Settings
     settingsForm.addEventListener("submit", saveSettings);
     modal.addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === modal) closeSettings(); });

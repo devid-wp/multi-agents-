@@ -11,7 +11,11 @@ import asyncio
 import logging
 from typing import AsyncGenerator, Dict, List, Optional
 
-from core.config import UserCredentials, settings
+from core.config import (
+    DEFAULT_CRITIC_MODEL, DEFAULT_EXECUTOR_MODEL, DEFAULT_NVIDIA_URL,
+    DEFAULT_OLLAMA_URL, DEFAULT_OPENAI_URL, DEFAULT_PLANNER_MODEL,
+    UserCredentials, settings,
+)
 from core.llm_clients import (
     BaseLLMClient,
     LLMError,
@@ -53,59 +57,80 @@ class AgentManager:
         self.cline_tool_manager = None
 
         # ── ЖЁСТКИЙ ЛОКАЛЬНЫЙ ФОРС ОЛЛАМЫ ДЛЯ ВСЕХ АГЕНТОВ ────────────────
-        local_model = "qwen2.5-coder:1.5b"
-        log.info("[OLLAMA_FORCE] Инициализируем единый локальный OllamaClient для всех агентов. Модель: %s", local_model)
-        
-        shared_client = OllamaClient(
-            base_url="http://localhost:11434", 
-            default_model=local_model
-        )
-        
-        planner_client = shared_client
-        critic_client = shared_client
-        executor_client = shared_client
+        def build_client(config, default_model):
+            if config is None:
+                model = "qwen2.5-coder:1.5b"
+                return OllamaClient(base_url=DEFAULT_OLLAMA_URL, default_model=model), model, "ollama"
+            model = config.model_name or default_model
+            if config.provider == "ollama":
+                return OllamaClient(
+                    base_url=config.base_url or DEFAULT_OLLAMA_URL,
+                    default_model=model,
+                ), model, config.provider
+            if config.provider == "nvidia":
+                return NvidiaClient(
+                    api_key=config.api_key,
+                    base_url=config.base_url or DEFAULT_NVIDIA_URL,
+                ), model, config.provider
+            if config.provider == "openrouter":
+                return OpenRouterClient(api_key=config.api_key or ""), model, config.provider
+            if config.provider == "gpt":
+                return OpenAICompatibleClient(
+                    api_key=config.api_key,
+                    base_url=config.base_url or DEFAULT_OPENAI_URL,
+                    model=model,
+                ), model, config.provider
+            raise LLMError(f"Provider {config.provider!r} is not supported by this local alpha")
+
+        planner_client, planner_model, planner_provider = build_client(creds.planner, DEFAULT_PLANNER_MODEL)
+        critic_client, critic_model, critic_provider = build_client(creds.critic, DEFAULT_CRITIC_MODEL)
+        executor_client, executor_model, executor_provider = build_client(creds.executor, DEFAULT_EXECUTOR_MODEL)
         # ───────────────────────────────────────────────────────────────────
 
         self.planner = PlannerAgent(
-            model=local_model,
+            model=planner_model,
             llm_client=planner_client,
             tools=self.tools,
         )
         self.critic = CriticAgent(
-            model=local_model,
+            model=critic_model,
             llm_client=critic_client,
             tools=self.tools,
         )
         self.executor = ExecutorAgent(
-            model=local_model,
+            model=executor_model,
             llm_client=executor_client,
             tools=self.tools,
         )
 
         # Совместимость
-        self._nvidia = None
-        self._ollama = shared_client
-        self._openrouter = None
+        self._provider_info = {
+            "planner": (planner_provider, planner_model),
+            "critic": (critic_provider, critic_model),
+            "executor": (executor_provider, executor_model),
+        }
 
     # ──────────────────────────────────────────────────────────────
     # Проверка готовности
     # ──────────────────────────────────────────────────────────────
     def readiness_report(self) -> dict:
-        local_model = "qwen2.5-coder:1.5b"
+        planner_provider, planner_model = self._provider_info["planner"]
+        critic_provider, critic_model = self._provider_info["critic"]
+        executor_provider, executor_model = self._provider_info["executor"]
         return {
-            "planner_configured":  True,
-            "critic_configured":   True,
+            "planner_configured": self.creds.planner is None or planner_provider == "ollama" or bool(self.creds.planner.api_key),
+            "critic_configured": self.creds.critic is None or critic_provider == "ollama" or bool(self.creds.critic.api_key),
             "executor_configured": True,
-            "executor_provider":   "ollama",
-            "planner_provider":    "ollama",
-            "critic_provider":     "ollama",
-            "ollama_configured":   True,
-            "openrouter_configured": False,
-            "planner_model":    local_model,
-            "critic_model":     local_model,
-            "executor_model":   local_model,
-            "planner_base_url": "http://localhost:11434",
-            "critic_base_url":  "http://localhost:11434",
+            "executor_provider": executor_provider,
+            "planner_provider": planner_provider,
+            "critic_provider": critic_provider,
+            "ollama_configured": "ollama" in {planner_provider, critic_provider, executor_provider},
+            "openrouter_configured": "openrouter" in {planner_provider, critic_provider, executor_provider},
+            "planner_model": planner_model,
+            "critic_model": critic_model,
+            "executor_model": executor_model,
+            "planner_base_url": getattr(self.creds.planner, "base_url", None),
+            "critic_base_url": getattr(self.creds.critic, "base_url", None),
             "planner_model_url": None,
             "critic_model_url":  None,
         }

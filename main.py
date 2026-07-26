@@ -25,6 +25,7 @@ FastAPI entry-point для Trinity Multi-Agent System.
 from __future__ import annotations
 
 import asyncio
+import httpx
 import json
 import logging
 import os
@@ -306,7 +307,24 @@ async def write_settings(request: Request, payload: SettingsPayload):
 # ───────────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "service": "trinity"}
+    required_model = "qwen2.5-coder:1.5b"
+    ollama = {
+        "available": False,
+        "model_installed": False,
+        "required_model": required_model,
+        "start_command": "ollama serve",
+        "pull_command": f"ollama pull {required_model}",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=1.5) as client:
+            response = await client.get("http://localhost:11434/api/tags")
+            response.raise_for_status()
+            names = {item.get("name") for item in response.json().get("models", [])}
+            ollama["available"] = True
+            ollama["model_installed"] = required_model in names
+    except (httpx.HTTPError, ValueError):
+        pass
+    return {"ok": True, "service": "trinity", "ollama": ollama}
 
 
 # ───────────────────────────────────────────────────────────────────
