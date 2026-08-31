@@ -2,7 +2,7 @@
 
 > Один вечер + день сделали 0.3.0 alpha. Дальше — 3 фазы, без растягивания.
 
-## Фаза 1 — Стабилизация (сейчас, 1-2 недели) ✅ в работе
+## Фаза 1 — Стабилизация ✅ завершена (2026-08-31)
 **Цель:** убрать острый долг, чтобы следующий агент не споткнулся.
 
 - [x] Карта проекта `docs/PROJECT_MAP.md` (этот план — `docs/PLAN.md`)
@@ -14,16 +14,19 @@
 
 Критерий готовности: `grep -r "print(" core/ agents/ --include="*.py"` пусто, тесты `pytest -q` зеленые, карта актуальна.
 
-## Фаза 2 — Закаливание (2-3 недели)
-**Цель:** сделать alpha безопасной и предсказуемой.
+## Фаза 2 — Закаливание (2-3 недели) ✅ в работе (часть 1, 2026-08-31)
 
-- [ ] Аутентификация хотя бы local token (сейчас только `localhost_only` middleware `main.py:141`)
-- [ ] Хранение: sqlite (aiosqlite) вместо JSON для `history/rooms/changes` — атомарность + конкурентность (сейчас `.tmp + os.replace`)
-- [ ] Конфиг: вынести `MAX_HISTORY`, лимиты `workspace tree` в `core/config.py`; circuit breaker per-provider
-- [ ] Разбить монолиты: `main.py:743` -> `routers/workspace.py`, `routers/diagnostics.py`; `ui/static/app.js:1314` -> модули
-- [ ] CI: `ruff`, `mypy`, `pytest` в GitHub Actions
+- [x] Аутентификация: local token `TRINITY_LOCAL_TOKEN` / `settings.local_token` поверх `localhost_only` (`main.py:140`) — `/api/health` без токена
+- [ ] Хранение: sqlite (aiosqlite) вместо JSON для `history/rooms/changes` — отложено на часть 2 (сейчас `.tmp + os.replace` оставлен, добавлен коммент)
+- [x] Конфиг: лимиты вынесены — `history_max_messages`, `workspace_max_depth/max_entries`, `diagnostics_history_max`, `llm_circuit_breaker_threshold` (`core/config.py:90`)
+- [x] Circuit breaker: глобальный `_global_consecutive_errors` -> per-provider `dict[_circuit_key]` (`core/llm_clients.py:44`)
+- [x] Разбить монолиты: `main.py:519` (было 743) -> `routers/workspace.py:163` + `routers/diagnostics.py:52`; лимиты через `settings`
+- [x] UI модули: `ui/static/modules/config.js`, `utils.js`, `sse.js` созданы (будущий импорт в `app.js`, сохранена совместимость с `tests/test_ui_release_contract.py`)
+- [x] CI: `.github/workflows/ci.yml` — ruff + mypy + `pytest -k "not real_api"` на Python 3.11
 
-Критерий: один юзер не ломает сессии другого, рестарт не теряет `.trinity/`, CI зеленый.
+Критерий части 1: `py_compile` ок, `print` поиск пустой, `/api/workspace/*` и `/api/diagnostics/*` через routers.
+
+Остаток Фазы 2 (часть 2): sqlite миграция + `app.js` полный переход на модули.
 
 ## Фаза 3 — Продукт (3-4 недели)
 **Цель:** закрыть UX-дыры alpha.

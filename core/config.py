@@ -90,6 +90,18 @@ class AppSettings(BaseSettings):
     # История диалогов — лимит сообщений до sliding window
     history_max_messages: int = Field(default=40, ge=10, le=200)
 
+    # Workspace лимиты (вынесены из main.py hardcode)
+    workspace_max_depth: int = Field(default=4, ge=1, le=10)
+    workspace_max_entries: int = Field(default=1000, ge=100, le=5000)
+    diagnostics_history_max: int = Field(default=500, ge=50, le=2000)
+
+    # Circuit breaker — теперь per-provider (см. core/llm_clients.py)
+    llm_circuit_breaker_threshold: int = Field(default=15, ge=5, le=100)
+
+    # Local token (опциональный Bearer для hardening поверх localhost_only)
+    # Если задан — клиенты должны слать Authorization: Bearer <token> или X-Trinity-Token
+    local_token: Optional[str] = Field(default=None, description="Optional local Bearer token")
+
 
 # Глобальный singleton — инициализируется один раз при импорте
 settings = AppSettings()

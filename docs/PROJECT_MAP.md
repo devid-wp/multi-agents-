@@ -23,7 +23,9 @@ Trinity — локальная multi-agent система на FastAPI: три �
 ## 3. Структура (что где)
 
 ```
-main.py                 # entry-point, все эндпоинты, lifespan, localhost_only middleware, workspace walker
+main.py                 # entry-point, lifespan, localhost_only+local_token middleware (519 строк, было 743)
+routers/workspace.py    # GET /api/workspace/tree + /stream (watchfiles), лимиты из settings
+routers/diagnostics.py  # GET /api/diagnostics/stream/history (SSE + ring buffer)
 core/config.py          # AppSettings (.env), UserCredentials (сессия), дефолты моделей/URL
 core/models.py          # ChatMessage, ProgressEvent(kind=agent_start|agent_message|tool_call|tool_result|agent_done|final|strategy|error|info), AgentProviderConfig
 core/llm_clients.py     # 5 клиентов, NvidiaProvider, retry, circuit breaker
@@ -89,6 +91,13 @@ start.sh / start.ps1    # bootstrap скрипты
 - **Готово:** 3 агента, 3 стратегии, SSE, sandbox, approval, комнаты (general builtin), история с sliding window, workspace watcher, diagnostics bus, healthcheck, Mission Control UI.
 - **Ограничения (CHANGELOG):** local alpha only, нет auth/multi-user, нет rename/delete комнат в UI, JSON без конкурентности, localhost only.
 - **Долг (фаза 1):** DEBUG `print` в `llm_clients.py`/`base.py`, жесткий комментарий `manager.py:59` "ФОРС ОЛЛАМЫ" (фактически — fallback), дубли `tools` vs `trinity/tools`, `threading.Lock` вместо `asyncio.Lock`, монолит `main.py:743`/`app.js:1314`.
+
+## 8. Новые модули Фазы 2
+- `core/config.py:90` — `history_max_messages`, `workspace_max_depth/max_entries`, `llm_circuit_breaker_threshold`, `local_token`
+- `core/llm_clients.py:44` — per-provider circuit breaker `_circuit_errors[key]`
+- `routers/` — вынесено из `main.py`
+- `ui/static/modules/` — `config.js`/`utils.js`/`sse.js` (будущий импорт, пока `app.js` совместим)
+- `.github/workflows/ci.yml` — ruff/mypy/pytest
 
 ## 8. Как запустить / проверить
 

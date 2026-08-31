@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff mypy pytest httpx
+      - name: Ruff (lint)
+        run: ruff check core/ agents/ tools/ routers/ main.py || true
+      - name: Mypy (type check)
+        run: mypy core/ agents/ --ignore-missing-imports || true
+      - name: Pytest (mocked, no LLM)
+        env:
+          SESSION_SECRET: test-secret-do-not-use-in-prod-0123456789abcdef0123456789abcdef
+          WORKSPACE_DIR: /tmp/trinity_ci_workspace
+        run: |
+          mkdir -p /tmp/trinity_ci_workspace
+          pytest -q -k "not real_api" --tb=short

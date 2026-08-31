@@ -48,7 +48,6 @@ from core.config import (
     UserCredentials,
     settings,
 )
-from core.diagnostics import diagnostics_bus
 from pydantic import BaseModel
 from core.models import (
     AgentName,
@@ -145,6 +144,17 @@ async def localhost_only(request: Request, call_next):
             status_code=403,
             content={"detail": "Trinity local alpha accepts localhost connections only"},
         )
+    # Optional local token (hardening): если TRINITY_LOCAL_TOKEN / local_token задан,
+    # требуем Bearer или X-Trinity-Token на всех /api/* (UI статика без проверки)
+    token = (settings.local_token or os.environ.get("TRINITY_LOCAL_TOKEN") or "").strip()
+    if token and request.url.path.startswith("/api/"):
+        auth = request.headers.get("authorization", "")
+        xtoken = request.headers.get("x-trinity-token", "")
+        bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        if bearer != token and xtoken != token:
+            # Разрешаем health без токена, чтобы bootstrap не падал
+            if request.url.path not in ("/api/health",):
+                return JSONResponse(status_code=401, content={"detail": "Invalid local token"})
     return await call_next(request)
 
 # Статика и шаблоны
@@ -161,6 +171,12 @@ app.mount(
     StaticFiles(directory=UI_DIR, html=True, check_dir=False),
     name="ui",
 )
+
+from routers import diagnostics as diagnostics_router
+from routers import workspace as workspace_router
+
+app.include_router(diagnostics_router.router)
+app.include_router(workspace_router.router)
 
 ACTIVE_AGENT: AgentName = AgentName.PLANNER
 
@@ -500,244 +516,4 @@ async def chat(request: Request, payload: ChatRequest):
             "X-Accel-Buffering": "no",  # отключаем буферизацию в nginx
             "Connection": "keep-alive",
         },
-    )
-
-
-# ───────────────────────────────────────────────────────────────────
-# Live Diagnostics — глобальный SSE + история
-#
-#   /api/diagnostics/stream   — long-lived SSE, фанит-аутит ВСЕ
-#                               tool_call/tool_result/error от ВСЕХ
-#                               параллельных прогонов (через шину).
-#   /api/diagnostics/history  — последние N событий из ring buffer.
-# ───────────────────────────────────────────────────────────────────
-SSE_HEADERS = {
-    "Cache-Control": "no-cache",
-    "X-Accel-Buffering": "no",
-    "Connection": "keep-alive",
-}
-
-
-@app.get("/api/diagnostics/stream")
-async def diagnostics_stream(request: Request):
-    """
-    Persistent SSE: фанит-аутит tool_call/tool_result/error от шины.
-
-    Протокол:
-      : ready\\n\\n              — посылаем сразу после подписки
-      data: <ProgressEvent JSON>\\n\\n   — каждое событие
-      : ping\\n\\n               — раз в ~15s, чтобы прокси не закрыли idle
-    """
-    queue = diagnostics_bus.subscribe()
-
-    async def gen() -> AsyncGenerator[str, None]:
-        try:
-            yield ": ready\n\n"
-            ping_at = asyncio.get_event_loop().time() + 15.0
-            while True:
-                # Ждём либо нового события, либо таймаута для ping
-                try:
-                    payload = await asyncio.wait_for(queue.get(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    now = asyncio.get_event_loop().time()
-                    if now >= ping_at:
-                        yield ": ping\n\n"
-                        ping_at = now + 15.0
-                    continue
-                yield f"data: {payload}\n\n"
-                ping_at = asyncio.get_event_loop().time() + 15.0
-        except asyncio.CancelledError:
-            return
-        finally:
-            diagnostics_bus.unsubscribe(queue)
-
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers=SSE_HEADERS,
-    )
-
-
-@app.get("/api/diagnostics/history")
-async def diagnostics_history(limit: int = Query(200, ge=1, le=500)):
-    """Снимок последних диагностических событий (newest-first)."""
-    return JSONResponse(diagnostics_bus.history(limit=limit))
-
-
-# ───────────────────────────────────────────────────────────────────
-# Workspace tree (REST snapshot + SSE file-watcher)
-# ───────────────────────────────────────────────────────────────────
-# watchfiles — внешний dep, импортируем лениво, чтобы /api/health
-# не падал, если пакет ещё не установлен в окружении.
-try:
-    from watchfiles import awatch  # type: ignore
-    _WATCHFILES_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    awatch = None  # type: ignore
-    _WATCHFILES_AVAILABLE = False
-
-
-# Каталоги, которые НЕ показываем в дереве и не трекаем в watcher-е.
-_WORKSPACE_IGNORE_DIRS = frozenset({
-    ".git", "__pycache__", "node_modules", ".venv", "venv",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".idea", ".vscode",
-})
-_WORKSPACE_IGNORE_FILE_SUFFIXES = (".pyc", ".pyo")
-
-
-def _is_hidden(name: str) -> bool:
-    return name.startswith(".")
-
-
-def _walk_workspace(
-    workspace: Path,
-    rel_root: str,
-    *,
-    max_depth: int = 4,
-    max_entries: int = 1000,
-    include_hidden: bool = False,
-) -> tuple[list[dict], bool]:
-    """
-    Рекурсивный обход workspace. Возвращает (entries, truncated).
-    entries: плоский список {"path","type","size","mtime"} (path — относительно workspace).
-    """
-    base = (workspace / rel_root).resolve() if rel_root not in ("", ".") else workspace.resolve()
-    entries: list[dict] = []
-    truncated = False
-
-    def _walk(cur: Path, depth: int) -> None:
-        nonlocal truncated
-        if len(entries) >= max_entries:
-            truncated = True
-            return
-        if depth > max_depth:
-            return
-        try:
-            children = sorted(cur.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-        except (PermissionError, FileNotFoundError, NotADirectoryError):
-            return
-        for child in children:
-            if len(entries) >= max_entries:
-                truncated = True
-                return
-            name = child.name
-            if not include_hidden and _is_hidden(name):
-                continue
-            if child.is_dir() and name in _WORKSPACE_IGNORE_DIRS:
-                continue
-            if child.is_file() and name.endswith(_WORKSPACE_IGNORE_FILE_SUFFIXES):
-                continue
-            try:
-                st = child.stat()
-                size = st.st_size if child.is_file() else 0
-                mtime = st.st_mtime
-            except OSError:
-                continue
-            try:
-                rel = child.relative_to(workspace).as_posix()
-            except ValueError:
-                # Не внутри workspace (симлинк наружу) — пропускаем
-                continue
-            entries.append({
-                "path": rel,
-                "type": "dir" if child.is_dir() else "file",
-                "size": int(size),
-                "mtime": float(mtime),
-            })
-            if child.is_dir():
-                _walk(child, depth + 1)
-
-    _walk(base, 0)
-    return entries, truncated
-
-
-@app.get("/api/workspace/tree")
-async def workspace_tree(
-    path: str = Query(".", description="Path relative to workspace"),
-    hidden: int = Query(0, ge=0, le=1, description="Include hidden files (1=yes)"),
-):
-    """
-    JSON-снимок дерева файлов.
-
-    path — относительный путь внутри settings.workspace_dir. '..' запрещён.
-    Ограничения: depth ≤ 4, entries ≤ 1000 (см. флаг truncated).
-    """
-    # Защита от path traversal
-    if path is None:
-        path = "."
-    if ".." in Path(path).parts:
-        raise HTTPException(status_code=400, detail="Path traversal not allowed")
-    workspace = Path(settings.workspace_dir).resolve()
-    entries, truncated = _walk_workspace(
-        workspace,
-        path,
-        max_depth=4,
-        max_entries=1000,
-        include_hidden=bool(hidden),
-    )
-    return JSONResponse({
-        "root": str(workspace),
-        "rel": path,
-        "entries": entries,
-        "truncated": truncated,
-        "count": len(entries),
-    })
-
-
-@app.get("/api/workspace/stream")
-async def workspace_stream(request: Request):
-    """
-    SSE-поток изменений в workspace. Бэкенд — watchfiles.awatch.
-
-    Каждое изменение (created / modified / deleted) присылается
-    относительным путём. Игнорируемые каталоги (см. _WORKSPACE_IGNORE_DIRS)
-    и *.pyc фильтруются здесь, чтобы UI не дёргался на каждое движение
-    внутри __pycache__.
-    """
-    if not _WATCHFILES_AVAILABLE or awatch is None:  # pragma: no cover
-        raise HTTPException(
-            status_code=503,
-            detail="watchfiles is not installed. Run: pip install watchfiles",
-        )
-
-    workspace = Path(settings.workspace_dir).resolve()
-
-    def _should_ignore(path: Path) -> bool:
-        # Проверяем по сегментам пути — если любой из родителей
-        # входит в игнор-список, событие пропускаем.
-        for part in path.parts:
-            if part in _WORKSPACE_IGNORE_DIRS:
-                return True
-            if part.endswith(_WORKSPACE_IGNORE_FILE_SUFFIXES):
-                return True
-        return False
-
-    async def gen() -> AsyncGenerator[str, None]:
-        yield ": ready\n\n"
-        try:
-            async for changes in awatch(workspace, step=200, recursive=True):
-                for change_type, abs_path in changes:
-                    p = Path(abs_path)
-                    if _should_ignore(p):
-                        continue
-                    try:
-                        rel = p.relative_to(workspace).as_posix()
-                    except Exception as e:
-                        log.warning("workspace watcher gen error: %s", e)
-                        continue
-                    if rel.startswith("."):
-                        continue
-                    # change_type: 1=modified, 2=created, 3=deleted
-                    # см. watchfiles.Change
-                    kind = {1: "modified", 2: "created", 3: "deleted"}.get(
-                        int(change_type), "modified"
-                    )
-                    yield f"data: {json.dumps({'type': kind, 'path': rel})}\n\n"
-        except asyncio.CancelledError:
-            return
-
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers=SSE_HEADERS,
     )

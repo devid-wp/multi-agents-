@@ -42,57 +42,59 @@ class LLMError(RuntimeError):
     """Любая ошибка взаимодействия с LLM-провайдером."""
 
 # ───────────────────────────────────────────────────────────────────
-# Retry and Circuit Breaker logic
+# Retry and Circuit Breaker logic (per-provider)
 # ───────────────────────────────────────────────────────────────────
-_global_consecutive_errors = 0
-_CIRCUIT_BREAKER_THRESHOLD = 15
+_circuit_errors: dict[str, int] = {}
+
+
+def _circuit_key(self, agent) -> str:
+    name = type(self).__name__
+    ag = agent.value if hasattr(agent, "value") else str(agent) if agent else "none"
+    base = getattr(self, "base_url", None) or getattr(self, "_base_url", None) or ""
+    return f"{name}:{base}:{ag}"
+
 
 def with_retry_and_circuit_breaker(max_attempts: int = 3, backoff_delays: tuple = (1, 2, 4)):
     """
-    Декоратор для LLM-вызовов:
-      - 3 попытки (по умолчанию) с экспоненциальным backoff.
-      - При 429/50x ошибках ждет и пробует снова (до исчерпания попыток).
-      - Если глобально подряд много ошибок — открывает circuit breaker.
-    В самом клиенте мы можем дополнительно переключать ключи перед ретраем.
+    Декоратор для LLM-вызовов (per-provider circuit breaker):
+      - 3 попытки с backoff.
+      - При 429/50x — ретрай + ротация ключа.
+      - Счётчик ошибок — per-provider (ключ = Client:base_url:agent), а не глобальный.
+      - Порог берётся из settings.llm_circuit_breaker_threshold.
     """
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(self, *args, **kwargs):
-            global _global_consecutive_errors
-            
-            if _global_consecutive_errors >= _CIRCUIT_BREAKER_THRESHOLD:
-                raise LLMError("Circuit breaker open: Too many consecutive LLM errors globally.")
-                
+            agent = kwargs.get("agent")
+            key = _circuit_key(self, agent)
+            threshold = getattr(settings, "llm_circuit_breaker_threshold", 15)
+            if _circuit_errors.get(key, 0) >= threshold:
+                raise LLMError(f"Circuit breaker open for {key}: {threshold} consecutive errors.")
+
             last_exc = None
             for attempt in range(max_attempts):
                 try:
                     res = await func(self, *args, **kwargs)
-                    _global_consecutive_errors = 0  # Сброс при успехе
+                    _circuit_errors[key] = 0
                     return res
                 except Exception as e:
-                    # Проверяем, нужно ли ретраить (обычно 429, 50x)
-                    is_retryable = False
-                    if "429" in str(e) or "503" in str(e) or "502" in str(e) or "504" in str(e) or "NetworkError" in str(e):
-                        is_retryable = True
-                        
+                    is_retryable = any(code in str(e) for code in ("429", "503", "502", "504", "NetworkError"))
                     if not is_retryable or attempt == max_attempts - 1:
-                        _global_consecutive_errors += 1
+                        _circuit_errors[key] = _circuit_errors.get(key, 0) + 1
                         raise e
-                    
                     delay = backoff_delays[attempt] if attempt < len(backoff_delays) else backoff_delays[-1]
-                    log.warning(f"LLM call failed with {e}. Retrying in {delay}s (attempt {attempt + 1}/{max_attempts})...")
-                    
-                    # Если клиент поддерживает ротацию ключей (например, NvidiaProvider),
-                    # мы можем запросить её:
-                    agent = kwargs.get('agent')
+                    log.warning("LLM %s failed (%s), retry %d/%d in %ss", key, e, attempt + 1, max_attempts, delay)
                     if hasattr(self, '_resolve') and agent:
-                        provider = self._resolve(agent)
-                        if hasattr(provider, 'rotate_key'):
-                            provider.rotate_key()
-                            
+                        try:
+                            provider = self._resolve(agent)
+                            if hasattr(provider, 'rotate_key'):
+                                provider.rotate_key()
+                        except Exception:
+                            pass
                     await asyncio.sleep(delay)
-                    
-            raise last_exc
+            if last_exc:
+                raise last_exc
+            raise LLMError(f"LLM call failed for {key}")
         return wrapper
     return decorator
 
