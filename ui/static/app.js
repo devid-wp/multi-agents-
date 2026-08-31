@@ -207,6 +207,31 @@
     await loadSessionHistory();
   }
 
+  async function renameRoom() {
+    const name = window.prompt("New room name", $("#room-select")?.selectedOptions[0]?.textContent || "");
+    if (!name || !name.trim()) return;
+    const id = state.roomId;
+    if (id === "general") { window.alert("Cannot rename builtin General room"); return; }
+    const res = await fetch(`${ENDPOINTS.rooms}/${encodeURIComponent(id)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.detail || `Rename failed (${res.status})`); }
+    await loadRooms();
+  }
+
+  async function deleteRoom() {
+    const id = state.roomId;
+    if (id === "general") { window.alert("Cannot delete builtin General room"); return; }
+    if (!window.confirm(`Delete room "${id}"?`)) return;
+    const res = await fetch(`${ENDPOINTS.rooms}/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.detail || `Delete failed (${res.status})`); }
+    state.roomId = "general";
+    await loadRooms();
+    clearBridge();
+    await loadSessionHistory();
+  }
+
   async function decideChange(id, approve) {
     const response = await fetch(`${ENDPOINTS.changes}/${encodeURIComponent(id)}/decision`, {
       method: "POST",
@@ -1167,6 +1192,12 @@
     });
     $("#btn-new-room")?.addEventListener("click", () => {
       void createRoom().catch((error) => window.alert(error.message));
+    });
+    $("#btn-rename-room")?.addEventListener("click", () => {
+      void renameRoom().catch((error) => window.alert(error.message));
+    });
+    $("#btn-delete-room")?.addEventListener("click", () => {
+      void deleteRoom().catch((error) => window.alert(error.message));
     });
     // Settings
     settingsForm.addEventListener("submit", saveSettings);

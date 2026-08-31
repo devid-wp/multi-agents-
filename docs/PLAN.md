@@ -26,14 +26,15 @@
 
 Критерий: sqlite включается флагом `USE_SQLITE=1`, JSON остаётся fallback, `py_compile` ок.
 
-## Фаза 3 — Продукт (3-4 недели) ✅ в работе (старт)
+## Фаза 3 — Продукт (3-4 недели) ✅ в работе (часть 1)
 
-- [x] Комнаты backend: `PUT /api/rooms/{id}` rename + `DELETE /api/rooms/{id}` (`main.py:207`, `core/rooms.py:rename/delete`) — UI кнопки next
+- [x] Комнаты backend: `PUT /api/rooms/{id}` rename + `DELETE /api/rooms/{id}` (`main.py:207`, `core/rooms.py:rename/delete`)
+- [x] Комнаты UI: `✎ Rename` + `🗑 Delete` в `ui/index.html:58` + `ui/static/app.js:renameRoom/deleteRoom` (защита builtin `general`)
 - [ ] Approval UX: diff для `replace_in_file` уже есть (`ui/static/app.js:816`, `core/changes.py:77`), нужно подсветка в UI
 - [ ] Сборка UI: Vite, убрать Tailwind CDN, удалить legacy `templates/`/`static/` — отложено
 - [ ] Лимиты и наблюдаемость: rate-limit LLM, costs/latency — отложено
 
-Критерий: `PUT/DELETE /api/rooms` работают (sqlite + JSON), следующий шаг — UI для rename/delete.
+Критерий: rename/delete работают end-to-end (sqlite + JSON), следующий шаг — Vite/CDN.
 
 ---
 
