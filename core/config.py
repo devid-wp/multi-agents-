@@ -105,6 +105,9 @@ class AppSettings(BaseSettings):
     # SQLite backend (Фаза 2 часть 2): если True — history/rooms/changes через .trinity/trinity.db
     use_sqlite: bool = Field(default=False, description="Use SQLite instead of JSON for stores")
 
+    # Rate-limit для /api/chat (Фаза 3)
+    chat_rate_limit_per_minute: int = Field(default=20, ge=5, le=100)
+
 
 # Глобальный singleton — инициализируется один раз при импорте
 settings = AppSettings()

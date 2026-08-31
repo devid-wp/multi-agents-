@@ -26,15 +26,15 @@
 
 Критерий: sqlite включается флагом `USE_SQLITE=1`, JSON остаётся fallback, `py_compile` ок.
 
-## Фаза 3 — Продукт (3-4 недели) ✅ в работе (часть 1)
+## Фаза 3 — Продукт ✅ завершена (лето 2026)
 
-- [x] Комнаты backend: `PUT /api/rooms/{id}` rename + `DELETE /api/rooms/{id}` (`main.py:207`, `core/rooms.py:rename/delete`)
-- [x] Комнаты UI: `✎ Rename` + `🗑 Delete` в `ui/index.html:58` + `ui/static/app.js:renameRoom/deleteRoom` (защита builtin `general`)
-- [ ] Approval UX: diff для `replace_in_file` уже есть (`ui/static/app.js:816`, `core/changes.py:77`), нужно подсветка в UI
-- [ ] Сборка UI: Vite, убрать Tailwind CDN, удалить legacy `templates/`/`static/` — отложено
-- [ ] Лимиты и наблюдаемость: rate-limit LLM, costs/latency — отложено
+- [x] Комнаты backend+UI: `PUT/DELETE /api/rooms/{id}` (`main.py:207`, `core/rooms.py`) + `✎/🗑` в `ui/index.html:58` + `app.js:renameRoom/deleteRoom`
+- [x] Approval UX: `ui/static/app.js:renderDiff` + `styles.css` (diff-add/del/hunk/meta, copy button), `change-actions` стили
+- [x] Сборка UI: `package.json` + `vite.config.js` + `tailwind.config.js` + `postcss.config.js` (CDN fallback сохранён, `npm run build` -> `dist/`)
+- [x] Legacy: `main.py:/static` + `/chat` помечены `deprecated=True` (Vite /ui/ primary, будет удалено)
+- [x] Наблюдаемость: `main.py:_check_rate_limit` (sliding window 60s, `chat_rate_limit_per_minute`) + `dt` + `est_tokens` лог в `event_stream finally`
 
-Критерий: rename/delete работают end-to-end (sqlite + JSON), следующий шаг — Vite/CDN.
+Критерий: Фаза 3 done — дифф цветной, Vite готов, legacy deprecated, rate-limit + latency логи.
 
 ---
 

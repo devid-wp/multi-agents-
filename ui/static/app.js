@@ -140,6 +140,20 @@
     }
   }
 
+  function renderDiff(diff) {
+    if (!diff) return '<pre class="diff-empty">(empty diff)</pre>';
+    const lines = diff.split("\n");
+    const html = lines.map((l) => {
+      const e = escapeHtml(l);
+      if (l.startsWith("+++") || l.startsWith("---")) return `<span class="diff-meta">${e}</span>`;
+      if (l.startsWith("@@")) return `<span class="diff-hunk">${e}</span>`;
+      if (l.startsWith("+")) return `<span class="diff-add">${e}</span>`;
+      if (l.startsWith("-")) return `<span class="diff-del">${e}</span>`;
+      return `<span class="diff-ctx">${e}</span>`;
+    }).join("\n");
+    return `<pre class="diff-colored">${html}</pre>`;
+  }
+
   async function refreshChanges() {
     const panel = $("#change-proposals");
     if (!panel) return;
@@ -150,10 +164,21 @@
     panel.innerHTML = pending.map((item) => `
       <article class="change-proposal" data-proposal="${escapeHtml(item.id)}">
         <div class="tool-status-title">Pending change · ${escapeHtml(item.path)}</div>
-        <pre>${escapeHtml(item.diff || "(empty diff)")}</pre>
-        <button type="button" data-change-action="approve">Approve</button>
-        <button type="button" data-change-action="reject">Reject</button>
+        ${renderDiff(item.diff)}
+        <div class="change-actions">
+          <button type="button" class="btn-primary" data-change-action="approve">✓ Approve</button>
+          <button type="button" class="btn-ghost" data-change-action="reject">✗ Reject</button>
+          <button type="button" class="btn-ghost" data-change-action="copy" title="Copy diff">⎘ Copy</button>
+        </div>
       </article>`).join("");
+    panel.querySelectorAll('[data-change-action="copy"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const card = btn.closest("[data-proposal]");
+        const diff = pending.find((p) => p.id === card.dataset.proposal)?.diff || "";
+        navigator.clipboard.writeText(diff).catch(()=>{});
+        btn.textContent = "Copied!"; setTimeout(()=> btn.textContent="⎘ Copy", 1200);
+      });
+    });
   }
 
   async function loadRooms() {

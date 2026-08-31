@@ -25,11 +25,13 @@ FastAPI entry-point для Trinity Multi-Agent System.
 from __future__ import annotations
 
 import asyncio
+import time
 import httpx
 import json
 import logging
 import os
 import sys
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Optional
@@ -157,7 +159,8 @@ async def localhost_only(request: Request, call_next):
                 return JSONResponse(status_code=401, content={"detail": "Invalid local token"})
     return await call_next(request)
 
-# Статика и шаблоны
+# Статика и шаблоны — legacy /static и /chat помечены deprecated (будут удалены после Vite)
+# Новый UI: /ui/ (Vite build -> dist/, fallback CDN)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
@@ -177,6 +180,18 @@ from routers import workspace as workspace_router
 
 app.include_router(diagnostics_router.router)
 app.include_router(workspace_router.router)
+
+# Rate-limit state for /api/chat (Фаза 3): sliding window 60s per IP
+_chat_rate: dict[str, deque[float]] = defaultdict(deque)
+
+def _check_rate_limit(ip: str) -> None:
+    now = time.time()
+    window = _chat_rate[ip]
+    while window and now - window[0] > 60:
+        window.popleft()
+    if len(window) >= settings.chat_rate_limit_per_minute:
+        raise HTTPException(status_code=429, detail=f"Rate limit: {settings.chat_rate_limit_per_minute}/min")
+    window.append(now)
 
 ACTIVE_AGENT: AgentName = AgentName.PLANNER
 
@@ -273,10 +288,10 @@ async def index():
 # ───────────────────────────────────────────────────────────────────
 # Legacy chat UI (для обратной совместимости со старыми закладками)
 # ───────────────────────────────────────────────────────────────────
-@app.get("/chat/", response_class=HTMLResponse)
-@app.get("/chat", response_class=HTMLResponse)
+@app.get("/chat/", response_class=HTMLResponse, deprecated=True)
+@app.get("/chat", response_class=HTMLResponse, deprecated=True)
 async def legacy_chat(request: Request):
-    """Рендерит старый ChatGPT-подобный интерфейс из templates/index.html."""
+    """Рендерит старый ChatGPT-подобный интерфейс — deprecated, используйте /ui/ (Vite)."""
     creds = get_credentials(request)
     return templates.TemplateResponse(
         request,
@@ -439,6 +454,10 @@ async def chat(request: Request, payload: ChatRequest):
     Принимает задачу → возвращает SSE-поток с событиями прогресса.
     Формат события: data: <JSON ProgressEvent>\\n\\n
     """
+    # Rate-limit (Фаза 3)
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip)
+    t0 = time.time()
     creds = get_credentials(request)
 
     # Если прислали эфемерные кредентиалы (без сохранения в сессию) —
@@ -485,6 +504,7 @@ async def chat(request: Request, payload: ChatRequest):
                 f"Executor={ready['executor_model']}"
             ),
         ).to_sse()
+        start = t0
 
         # Защитный «ограничитель»: гарантируем, что стрим всегда
         # корректно завершается — даже если менеджер вернёт None,
@@ -518,9 +538,6 @@ async def chat(request: Request, payload: ChatRequest):
             log.info("client disconnected (GeneratorExit) mid-stream")
             return
         except Exception as e:  # noqa: BLE001
-            # Любая нештатная ситуация в менеджере: логируем и
-            # отдаём клиенту финальный SSE-error-event, чтобы UI
-            # не завис в «бесконечной загрузке».
             log.exception("unhandled error in run_task")
             try:
                 yield ProgressEvent(
@@ -528,6 +545,11 @@ async def chat(request: Request, payload: ChatRequest):
                 ).to_sse()
             except Exception:  # noqa: BLE001
                 pass
+        finally:
+            dt = time.time() - start
+            # costs/latency: payload length ~ tokens, 1 token ≈ 4 chars
+            est_tokens = len(payload.message) // 4
+            log.info("chat done ip=%s room=%s strat=%s dt=%.2fs est_tokens=%d", ip, payload.room_id, payload.strategy or "auto", dt, est_tokens)
 
     return StreamingResponse(
         event_stream(),
