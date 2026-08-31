@@ -1,6 +1,6 @@
 # Trinity — Multi-Agent System for autonomous development
 
-> Local alpha `0.3.0`. Запускайте только на `127.0.0.1` и направляйте
+> Local alpha `0.4.0` (см. CHANGELOG). Запускайте только на `127.0.0.1` и направляйте
 > `WORKSPACE_DIR` на отдельную рабочую копию. Изменения файлов от агентов
 > требуют ручного подтверждения в UI. Опасные `execute_bash`, `execute_git`
 > и `delete_file` отключены в release-профиле.
@@ -253,6 +253,14 @@ sudo loginctl enable-linger $USER    # жить после logout
 `pull`, `checkout`, `log`, `branch`, `reset`, `restore`, `rm`, `mv`, `fetch`, `stash`, `show`, `tag`.
 
 ---
+
+## Сборка UI (Vite, Фаза 3)
+
+```bash
+npm install
+npm run build   # -> dist/ (обслушивается как статика, CDN fallback остаётся)
+npm run dev     # Vite dev на :5173 проксирует /api -> :8000
+```
 
 ## Тесты
 
