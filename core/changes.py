@@ -6,7 +6,7 @@ import json
 import os
 import uuid
 from pathlib import Path
-from threading import Lock
+from threading import Lock  # sync store; FastAPI вызывает через asyncio.to_thread / sync context, поэтому threading.Lock корректен
 
 from tools.file_tool import _safe_resolve
 

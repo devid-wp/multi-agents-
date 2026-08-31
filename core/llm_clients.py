@@ -224,17 +224,17 @@ class NvidiaProvider:
         if self.model_url:
             if self._is_valid_model_override():
                 result = self.model_url
-                print(f"DEBUG_URL: final_url={result} (source=model_url override, base_url={self.base_url})")
+                log.debug("NvidiaProvider endpoint: model_url override %s (base_url=%s)", result, self.base_url)
                 return result
-            print(f"WARNING_URL: model_url={self.model_url!r} is not a valid override. Falling back to base_url.")
+            log.warning("NvidiaProvider: model_url=%r is not a valid override, falling back to base_url", self.model_url)
 
         if self.base_url.endswith(self._CHAT_COMPLETIONS_SUFFIX):
             result = self.base_url
-            print(f"DEBUG_URL: final_url={result} (source=base_url as-is, already contains /chat/completions)")
+            log.debug("NvidiaProvider endpoint: base_url as-is %s", result)
             return result
 
         result = f"{self.base_url}{self._CHAT_COMPLETIONS_SUFFIX}"
-        print(f"DEBUG_URL: final_url={result} (source=base_url + appended /chat/completions)")
+        log.debug("NvidiaProvider endpoint: base_url+append %s", result)
         return result
 
     def get_current_key(self) -> str:
@@ -245,7 +245,7 @@ class NvidiaProvider:
             old_key = self._keys[self._current_key_idx]
             self._current_key_idx = (self._current_key_idx + 1) % len(self._keys)
             new_key = self._keys[self._current_key_idx]
-            print(f"DEBUG_KEY: rotated key from {old_key[:6]}... to {new_key[:6]}...")
+            log.debug("NvidiaProvider rotated key %s... -> %s...", old_key[:6], new_key[:6])
 
 
 NvidiaProviderResolver = Callable[[AgentName], Tuple[Any, ...]]
@@ -272,17 +272,17 @@ class NvidiaClient(BaseLLMClient):
                     else:
                         _k, _b = _entry  # type: ignore[misc]
                         _m = None
-                    print(f"DEBUG_INIT: agent={_agent.value} base_url={_b!r} model_url={_m!r}")
+                    log.debug("NvidiaClient init: agent=%s base_url=%r model_url=%r", _agent.value, _b, _m)
             else:
-                print(f"DEBUG_INIT: base_url={base_url!r} model_url=None")
+                log.debug("NvidiaClient init: base_url=%r model_url=None", base_url)
         except Exception as _e:
-            print(f"DEBUG_INIT: failed to log input: {_e!r}")
+            log.debug("NvidiaClient init log failed: %r", _e)
 
         if providers is None and provider_resolver is None and api_key:
             _norm = (base_url or "").rstrip("/")
             if _norm.endswith("/v1"):
                 base_url = _norm + "/chat/completions"
-                print(f"DEBUG_INIT: REWRITE bare /v1 -> {base_url!r} (model_url is empty, single-provider mode)")
+                log.debug("NvidiaClient REWRITE bare /v1 -> %r (single-provider mode)", base_url)
 
         self._timeout = settings.llm_timeout_seconds
         self._providers: Dict[AgentName, NvidiaProvider] = {}
@@ -297,7 +297,7 @@ class NvidiaClient(BaseLLMClient):
                     model_url = None
                 if (url or "").rstrip("/").endswith("/v1") and not model_url:
                     url = url.rstrip("/") + "/chat/completions"
-                    print(f"DEBUG_INIT: REWRITE bare /v1 for {agent.value} -> {url!r}")
+                    log.debug("NvidiaClient REWRITE bare /v1 for %s -> %r", agent.value, url)
                 self._providers[agent] = NvidiaProvider(
                     api_key=key, base_url=url, model_url=model_url,
                 )
@@ -360,12 +360,7 @@ class NvidiaClient(BaseLLMClient):
             **headers,
             "Authorization": f"Bearer {provider.api_key[:6]}...{provider.api_key[-4:]}",
         }
-        print(f"[NVIDIA->{agent.value}] POST {url}")
-        print(f"[NVIDIA->{agent.value}] payload: {json.dumps(payload, ensure_ascii=False)[:1500]}")
-        print(f"DEBUG_HEADERS: {list(headers.keys())}")
-        print(f"DEBUG_PAYLOAD_MODEL: {payload.get('model')}")
-        if tools:
-            print(f"DEBUG_TOOLS: {len(tools)} tool schema(s) sent: {[t.get('function', {}).get('name', '?') for t in tools]}")
+        log.debug("[NVIDIA->%s] POST %s payload_model=%s tools=%s", agent.value, url, payload.get("model"), len(tools) if tools else 0)
 
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             try:
@@ -378,7 +373,7 @@ class NvidiaClient(BaseLLMClient):
                 raise LLMError(f"NVIDIA network error ({agent.value} @ {url}): {e}") from e
 
         if resp.status_code != 200:
-            print(f"[NVIDIA←{agent.value}] HTTP {resp.status_code} for URL: {url}\n[NVIDIA←{agent.value}] response body: {resp.text[:500]}")
+            log.warning("[NVIDIA←%s] HTTP %s for URL: %s body=%.500s", agent.value, resp.status_code, url, resp.text)
             raise LLMError(f"NVIDIA API {resp.status_code} ({agent.value}) @ {url}: {resp.text[:500]}")
 
         data = resp.json()
@@ -527,7 +522,7 @@ class GoogleGeminiClient(BaseLLMClient):
         if model.startswith("models/"):
             model = model.replace("models/", "", 1)
             
-        print(f"[GEMINI_FIX] Итоговый URL собран под модель: {model!r}")
+        log.debug("Gemini model resolved to %r", model)
         # ─────────────────────────────────────────────────────────────
 
         system_instruction = None
@@ -870,7 +865,7 @@ class OpenRouterClient(OpenAICompatibleClient):
             else:
                 model = "google/gemma-2-9b-it:free"
 
-        print(f"[OPENROUTER_ROUTER] Agent: {agent.value if agent else 'UNKNOWN'} -> Model: {model!r}")
+        log.debug("OpenRouter routing agent=%s -> model=%r", agent.value if agent else "UNKNOWN", model)
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -895,7 +890,7 @@ class OpenRouterClient(OpenAICompatibleClient):
                 raise LLMError(f"OpenRouter request failed: {exc}") from exc
                 
         if resp.status_code != 200:
-            print(f"[OPENROUTER_ERROR_BODY]: {resp.text}")
+            log.warning("OpenRouter error body: %.500s", resp.text)
             raise LLMError(f"OpenRouter API {resp.status_code}: {resp.text[:500]}")
             
         data = resp.json()

@@ -55,7 +55,7 @@ class HistoryManager:
             return
             
         # --- SLIDING WINDOW COMPRESSION ---
-        MAX_HISTORY = 40
+        MAX_HISTORY = settings.history_max_messages
         if len(messages) > MAX_HISTORY:
             # Оставляем первые 5 сообщений (контекст задачи и первый план), 
             # и последние (MAX_HISTORY - 6) сообщений. 

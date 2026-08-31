@@ -143,11 +143,7 @@ class Agent(abc.ABC):
         # На Planner tools нужны; на Critic — нет. Жёстко отфильтруем здесь.
         if self.name == AgentName.CRITIC:
             if tool_schemas:
-                print(
-                    f"DEBUG_TOOLS_CALL: {self.name.value} — "
-                    f"stripping {len(tool_schemas)} tool schema(s) "
-                    f"(critic must not request tools)"
-                )
+                log.debug("%s stripping %d tool schemas (critic must not request tools)", self.name.value, len(tool_schemas))
             tool_schemas = None
 
         if self._llm_client is not None:

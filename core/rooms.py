@@ -4,7 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
-from threading import Lock
+from threading import Lock  # sync store; см. комментарий в core/changes.py
 from typing import Any
 
 ROOM_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")

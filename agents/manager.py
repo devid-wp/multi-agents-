@@ -56,7 +56,9 @@ class AgentManager:
         # Выключаем ClineToolManager, так как работаем полностью локально через ToolRegistry
         self.cline_tool_manager = None
 
-        # ── ЖЁСТКИЙ ЛОКАЛЬНЫЙ ФОРС ОЛЛАМЫ ДЛЯ ВСЕХ АГЕНТОВ ────────────────
+        # ── Release profile: локальный fallback на Ollama когда провайдер не настроен ──
+        # В проде ключи приходят из UI/cookie; если config is None — используем Ollama.
+        # Это не "форс", а дефолт для local alpha (см. docs/PROJECT_MAP.md).
         def build_client(config, default_model):
             if config is None:
                 model = "qwen2.5-coder:1.5b"

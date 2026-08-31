@@ -87,6 +87,9 @@ class AppSettings(BaseSettings):
         description="OpenRouter base URL override (rarely needed)",
     )
 
+    # История диалогов — лимит сообщений до sliding window
+    history_max_messages: int = Field(default=40, ge=10, le=200)
+
 
 # Глобальный singleton — инициализируется один раз при импорте
 settings = AppSettings()
