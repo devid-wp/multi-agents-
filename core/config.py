@@ -102,6 +102,9 @@ class AppSettings(BaseSettings):
     # Если задан — клиенты должны слать Authorization: Bearer <token> или X-Trinity-Token
     local_token: Optional[str] = Field(default=None, description="Optional local Bearer token")
 
+    # SQLite backend (Фаза 2 часть 2): если True — history/rooms/changes через .trinity/trinity.db
+    use_sqlite: bool = Field(default=False, description="Use SQLite instead of JSON for stores")
+
 
 # Глобальный singleton — инициализируется один раз при импорте
 settings = AppSettings()

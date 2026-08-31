@@ -213,6 +213,27 @@ async def create_room(payload: RoomCreatePayload):
     return room
 
 
+class RoomRenamePayload(BaseModel):
+    name: str
+
+
+@app.put("/api/rooms/{room_id}")
+async def rename_room(room_id: str, payload: RoomRenamePayload):
+    try:
+        return _room_store().rename(room_id, payload.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/rooms/{room_id}")
+async def delete_room(room_id: str):
+    try:
+        _room_store().delete(room_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
 @app.get("/api/changes")
 async def list_changes():
     from core.changes import ChangeStore

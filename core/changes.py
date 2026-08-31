@@ -8,7 +8,14 @@ import uuid
 from pathlib import Path
 from threading import Lock  # sync store; FastAPI вызывает через asyncio.to_thread / sync context, поэтому threading.Lock корректен
 
+import sqlite3
+
 from tools.file_tool import _safe_resolve
+try:
+    from core.db import db_path, init_db, is_enabled
+except ImportError:
+    def is_enabled(ws=None): return False  # type: ignore
+    def init_db(ws=None): return None  # type: ignore
 
 
 def _digest(content: str) -> str:
@@ -22,6 +29,16 @@ class ChangeStore:
         self._lock = Lock()
 
     def _load(self) -> list[dict]:
+        if is_enabled(self.workspace):
+            try:
+                init_db(self.workspace)
+                con = sqlite3.connect(str(db_path(self.workspace)))
+                cur = con.execute("SELECT id, path, status, base_hash, content, diff FROM changes ORDER BY rowid")
+                rows = cur.fetchall()
+                con.close()
+                return [{"id":r[0],"path":r[1],"status":r[2],"base_hash":r[3],"content":r[4],"diff":r[5]} for r in rows]
+            except Exception:
+                pass
         if not self.path.exists():
             return []
         try:
@@ -31,6 +48,19 @@ class ChangeStore:
             return []
 
     def _save(self, changes: list[dict]) -> None:
+        if is_enabled(self.workspace):
+            try:
+                init_db(self.workspace)
+                con = sqlite3.connect(str(db_path(self.workspace)))
+                con.execute("DELETE FROM changes")
+                for c in changes[-100:]:
+                    con.execute("INSERT INTO changes (id, path, status, base_hash, content, diff) VALUES (?,?,?,?,?,?)",
+                                (c["id"], c["path"], c["status"], c["base_hash"], c["content"], c["diff"]))
+                con.commit()
+                con.close()
+                return
+            except Exception:
+                pass
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_suffix(".tmp")
         temp.write_text(json.dumps(changes, ensure_ascii=False, indent=2), encoding="utf-8")

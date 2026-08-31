@@ -50,6 +50,9 @@ httptools==0.6.4; sys_platform == "linux"
 # release; both expose the same `awatch` + `Change` enum API.
 watchfiles>=1.0,<2.0
 
+# SQLite backend (optional, for hardened stores)
+aiosqlite>=0.20,<1.0
+
 # ─────────────────────────────────────────────────────────────────
 # Dev / E2E tests (soft-deps, ставятся отдельно)
 #   • pytest-asyncio — async-тесты для SSE-стримов (/api/chat,

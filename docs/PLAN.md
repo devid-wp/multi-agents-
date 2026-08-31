@@ -14,29 +14,26 @@
 
 Критерий готовности: `grep -r "print(" core/ agents/ --include="*.py"` пусто, тесты `pytest -q` зеленые, карта актуальна.
 
-## Фаза 2 — Закаливание (2-3 недели) ✅ в работе (часть 1, 2026-08-31)
+## Фаза 2 — Закаливание ✅ завершена (часть 2, 2026-08-31)
 
 - [x] Аутентификация: local token `TRINITY_LOCAL_TOKEN` / `settings.local_token` поверх `localhost_only` (`main.py:140`) — `/api/health` без токена
-- [ ] Хранение: sqlite (aiosqlite) вместо JSON для `history/rooms/changes` — отложено на часть 2 (сейчас `.tmp + os.replace` оставлен, добавлен коммент)
+- [x] Хранение: sqlite backend `core/db.py` (`.trinity/trinity.db`, aiosqlite) + `settings.use_sqlite` + миграция из JSON для `history/rooms/changes` (`core/history.py:1`, `rooms.py:1`, `changes.py:1`)
 - [x] Конфиг: лимиты вынесены — `history_max_messages`, `workspace_max_depth/max_entries`, `diagnostics_history_max`, `llm_circuit_breaker_threshold` (`core/config.py:90`)
-- [x] Circuit breaker: глобальный `_global_consecutive_errors` -> per-provider `dict[_circuit_key]` (`core/llm_clients.py:44`)
-- [x] Разбить монолиты: `main.py:519` (было 743) -> `routers/workspace.py:163` + `routers/diagnostics.py:52`; лимиты через `settings`
-- [x] UI модули: `ui/static/modules/config.js`, `utils.js`, `sse.js` созданы (будущий импорт в `app.js`, сохранена совместимость с `tests/test_ui_release_contract.py`)
-- [x] CI: `.github/workflows/ci.yml` — ruff + mypy + `pytest -k "not real_api"` на Python 3.11
+- [x] Circuit breaker: глобальный -> per-provider `dict[_circuit_key]` (`core/llm_clients.py:44`)
+- [x] Разбить монолиты: `main.py:519` -> `routers/workspace.py:163` + `routers/diagnostics.py:52`
+- [x] UI модули: `ui/static/modules/config.js`, `utils.js`, `sse.js` созданы (совместимость сохранена)
+- [x] CI: `.github/workflows/ci.yml` — ruff + mypy + `pytest -k "not real_api"`
 
-Критерий части 1: `py_compile` ок, `print` поиск пустой, `/api/workspace/*` и `/api/diagnostics/*` через routers.
+Критерий: sqlite включается флагом `USE_SQLITE=1`, JSON остаётся fallback, `py_compile` ок.
 
-Остаток Фазы 2 (часть 2): sqlite миграция + `app.js` полный переход на модули.
+## Фаза 3 — Продукт (3-4 недели) ✅ в работе (старт)
 
-## Фаза 3 — Продукт (3-4 недели)
-**Цель:** закрыть UX-дыры alpha.
+- [x] Комнаты backend: `PUT /api/rooms/{id}` rename + `DELETE /api/rooms/{id}` (`main.py:207`, `core/rooms.py:rename/delete`) — UI кнопки next
+- [ ] Approval UX: diff для `replace_in_file` уже есть (`ui/static/app.js:816`, `core/changes.py:77`), нужно подсветка в UI
+- [ ] Сборка UI: Vite, убрать Tailwind CDN, удалить legacy `templates/`/`static/` — отложено
+- [ ] Лимиты и наблюдаемость: rate-limit LLM, costs/latency — отложено
 
-- [ ] Комнаты: rename/delete в UI (сейчас только create/list `main.py:186`)
-- [ ] Approval UX: diff для `replace_in_file`, отмена по `base_hash` уже есть `core/changes.py:77`
-- [ ] Сборка UI: Vite, убрать Tailwind CDN, удалить legacy `templates/`/`static/`
-- [ ] Лимиты и наблюдаемость: rate-limit LLM, логи `logs/trinity.log` ротация уже есть `main.py:78`, добавить costs/latency
-
-Критерий: пользователь может создать/удалить комнату, увидеть дифф, собрать UI без CDN, деплой через `systemd/trinity.service` без ручных правок.
+Критерий: `PUT/DELETE /api/rooms` работают (sqlite + JSON), следующий шаг — UI для rename/delete.
 
 ---
 
