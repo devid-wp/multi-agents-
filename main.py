@@ -124,6 +124,16 @@ async def lifespan(app: FastAPI):
             "SESSION_SECRET must be a unique random value of at least 32 characters"
         )
     log.info("🚀 Trinity starting. workspace=%s", os.path.abspath(settings.workspace_dir))
+    # SQLite 0.5.0: включён по умолчанию — мигрируем JSON→SQLite один раз при старте
+    try:
+        from core.db import is_enabled, migrate_json_if_needed, init_db
+
+        if is_enabled():
+            init_db(settings.workspace_dir)
+            migrate_json_if_needed(settings.workspace_dir)
+            log.info("SQLite backend enabled at %s", os.path.join(settings.workspace_dir, ".trinity/trinity.db"))
+    except Exception as e:  # noqa: BLE001
+        log.warning("SQLite init/migrate failed (fallback to JSON): %s", e)
     yield
     log.info("🛑 Trinity shutting down.")
 

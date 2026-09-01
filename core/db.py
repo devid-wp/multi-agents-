@@ -2,8 +2,8 @@
 core/db.py — SQLite backend для Фазы 2.
 
 Реализует лёгкий sqlite слой для history/rooms/changes.
-По умолчанию выключен (settings.use_sqlite=False) — JSON остаётся источником.
-Когда включён — таблицы создаются в .trinity/trinity.db, данные мигрируют из JSON один раз.
+С 0.5.0 включён по умолчанию (settings.use_sqlite=True) — JSON остаётся fallback.
+Таблицы создаются в .trinity/trinity.db, данные мигрируют из JSON один раз.
 
 Использование: from core.db import get_db, init_db
 """
