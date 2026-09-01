@@ -126,6 +126,45 @@ async def workspace_tree(
     })
 
 
+# ── File preview (0.5.0) — read single file with sandbox + truncation ──────
+MAX_FILE_PREVIEW = 50_000
+
+
+@router.get("/file")
+async def workspace_file(
+    path: str = Query(..., description="File path relative to workspace"),
+):
+    """GET /api/workspace/file?path=foo.py — sandbox-checked file read."""
+    if not path or not path.strip():
+        raise HTTPException(status_code=400, detail="path is required")
+    if ".." in Path(path).parts:
+        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+    from tools.file_tool import _safe_resolve
+
+    workspace = Path(settings.workspace_dir).resolve()
+    try:
+        target = _safe_resolve(str(workspace), path)
+    except Exception as exc:  # SecurityError -> 403
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    if not target.is_file():
+        raise HTTPException(status_code=400, detail=f"Not a file: {path}")
+    try:
+        content = target.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    truncated = len(content) > MAX_FILE_PREVIEW
+    if truncated:
+        content = content[:MAX_FILE_PREVIEW] + f"\n\n[...truncated at {MAX_FILE_PREVIEW} chars]"
+    return JSONResponse({
+        "path": path,
+        "content": content,
+        "size": target.stat().st_size,
+        "truncated": truncated,
+    })
+
+
 @router.get("/stream")
 async def workspace_stream(request: Request):
     if not _WATCHFILES_AVAILABLE or awatch is None:  # pragma: no cover
