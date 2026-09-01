@@ -1,11 +1,12 @@
-// Trinity — modules/config.js (Phase 2)
-// Вынесено из ui/static/app.js:22 — единый источник ENDPOINTS
+// Trinity — modules/config.js (Phase 2+ 0.7.0)
+// Единый источник ENDPOINTS — импортируется в app.js
 export const ENDPOINTS = {
   chat:          "/api/chat",
   chatHistory:   "/api/chat/history",
   agentsActive:  "/api/agents/active",
   agentsSwitch:  "/api/agents/switch",
   wsTree:        "/api/workspace/tree",
+  wsFile:        "/api/workspace/file",
   wsStream:      "/api/workspace/stream",
   settingsGet:   "/api/settings",
   settingsSet:   "/api/settings",

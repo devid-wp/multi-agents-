@@ -1,41 +1,11 @@
-/* Trinity — Mission Control Dashboard
- * Vanilla JS + Tailwind (CDN). No build step.
- *
- * Sections (in order):
- *   1. Constants & config
- *   2. State
- *   3. Utilities
- *   4. SSE clients (connectSSE + postSSE)
- *   5. Settings modal
- *   6. Command Bridge renderers
- *   7. Workspace tree
- *   8. Send message (POST /api/chat)
- *  10. boot()
+/* Trinity — ChatGPT OLED 0.7.0
+ * Теперь с ES-модулями: config/utils/sse вынесены в ui/static/modules/*
  */
+import { ENDPOINTS, SSE_BACKOFF_MS, PING_TIMEOUT_MS } from "./modules/config.js";
+import { $, $$, escapeHtml, safeJson, truncate, formatTime, formatMs, agentEmoji, debounce, basename, dirname, formatSize, cssEscape } from "./modules/utils.js";
 
 (() => {
   "use strict";
-
-  // ════════════════════════════════════════════════════════════
-  // 1. Constants & config
-  // ════════════════════════════════════════════════════════════
-  const ENDPOINTS = {
-    chat:          "/api/chat",
-    chatHistory:   "/api/chat/history",
-    agentsActive:  "/api/agents/active",
-    agentsSwitch:  "/api/agents/switch",
-    wsTree:        "/api/workspace/tree",       // GET ?path=. &hidden=0|1
-    wsFile:        "/api/workspace/file",       // GET ?path=
-    wsStream:      "/api/workspace/stream",     // GET, persistent SSE
-    settingsGet:   "/api/settings",
-    settingsSet:   "/api/settings",
-    health:        "/api/health",
-    rooms:         "/api/rooms",
-    changes:       "/api/changes",
-  };
-
-  const SSE_BACKOFF_MS = [500, 1000, 2000, 4000, 5000];  // capped at 5s
-  const PING_TIMEOUT_MS = 30_000;  // before we mark a stream offline
 
   // ════════════════════════════════════════════════════════════
   // 2. State
@@ -76,47 +46,7 @@
     },
   };
 
-  // ════════════════════════════════════════════════════════════
-  // 3. Utilities
-  // ════════════════════════════════════════════════════════════
-  const $  = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-
-  function escapeHtml(s) {
-    return String(s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-  function safeJson(obj) {
-    try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
-  }
-  function truncate(s, n) {
-    s = String(s ?? "");
-    return s.length > n ? s.slice(0, n) + "…" : s;
-  }
-  function formatTime(ts) {
-    if (!ts) return "";
-    const d = new Date(ts * 1000);  // server sends seconds
-    return d.toLocaleTimeString(undefined, { hour12: false });
-  }
-  function formatMs(ms) {
-    if (ms == null) return "";
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(2)}s`;
-  }
-  function agentEmoji(a) {
-    return ({ planner: "🧠", critic: "🔍", executor: "⚙️", manager: "🎯" }[a] || "•");
-  }
-  function debounce(fn, ms) {
-    let t = null;
-    return (...args) => {
-      if (t) clearTimeout(t);
-      t = setTimeout(() => { t = null; fn(...args); }, ms);
-    };
-  }
+  // 3. Utilities — из modules/utils.js (imported выше: $, $$, escapeHtml, safeJson, truncate, formatTime, formatMs, agentEmoji, debounce, basename, dirname, formatSize, cssEscape)
   function showToast(msg, kind="error") {
     const el = document.getElementById("gpt-toast");
     if (!el) { window.alert(msg); return; }
@@ -1145,23 +1075,7 @@
     return li;
   }
 
-  function basename(p) {
-    if (!p) return "";
-    const i = p.lastIndexOf("/");
-    return i < 0 ? p : p.slice(i + 1);
-  }
-  function dirname(p) {
-    if (!p) return ".";
-    const i = p.lastIndexOf("/");
-    return i < 0 ? "." : p.slice(0, i) || ".";
-  }
-  function formatSize(n) {
-    if (n == null) return "";
-    if (n < 1024) return `${n}B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}K`;
-    return `${(n / (1024 * 1024)).toFixed(1)}M`;
-  }
-
+  // basename, dirname, formatSize — from modules/utils.js (imported)
   function applyWorkspaceChange(ev) {
     if (!ev || !ev.path) return;
     const p = ev.path.replace(/\\/g, "/");
@@ -1195,11 +1109,7 @@
     node.classList.add("active");
     setTimeout(() => node.classList.remove("active"), Math.max(500, ms));
   }
-
-  function cssEscape(s) {
-    if (window.CSS && CSS.escape) return CSS.escape(s);
-    return String(s).replace(/[^a-zA-Z0-9_-]/g, (c) => "\\" + c);
-  }
+  // cssEscape — from modules/utils.js (imported)
 
   // ════════════════════════════════════════════════════════════
   // 9. Send message (POST /api/chat → Command Bridge)
