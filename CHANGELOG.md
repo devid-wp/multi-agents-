@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0 - 2026-09-01
+
+- UI file preview: `ui/index.html:file-preview` + `ui/static/app.js:openFilePreview` (click tree → `GET /api/workspace/file`)
+- Delete approval: `core/changes.py:propose_delete` (`op=delete`) + `core/db.py:ALTER op` + `tools/registry.py:DeleteFile` (6 tools now), approval UX reused
+- DB: SQLite-only — `core/history|rooms|changes` JSON fallback removed, `core/config:use_sqlite` deprecated (always True)
+- Refactor: `main.py` 576→116 split into `routers/rooms|changes|agents|chat|system` + existing `workspace|diagnostics`; `ui/static/modules/*` ready
+- Docs: `docs/PROJECT_MAP.md` 0.3.0→0.6.0, `docs/PLAN.md` phases 4+5
+
+## 0.5.0 - 2026-09-01
+
+- SQLite default: `core/config:use_sqlite=True` (was `False`), `main.py:lifespan` `init_db+migrate_json_if_needed`, `.env.example:USE_SQLITE`
+- Vite primary: `vite.config.js:base /ui/`, `ui/index.html` CDN removed (`./static/*` relative), `main.py:DIST_DIR` primary with `ui/` fallback, `ui/static/styles.css` gradient fix, `package.json 0.5.0`, `npm run build` 16KB html + assets
+- Workspace file: `GET /api/workspace/file?path=` (sandbox `_safe_resolve`, 50k truncate) `routers/workspace.py`
+- Tests: fix `diagnostics_bus` patch for `routers/diagnostics`, `endpoint_url` DEBUG/WARNING `print`→`log` (caplog), pytest 91 passed on Python 3.14
+- UI: Vite build verified `dist/index.html` `src="/ui/assets/..."`
+
 ## 0.4.0 - 2026-08-31
 
 - Added `docs/PROJECT_MAP.md` and compact 3-phase plan `docs/PLAN.md`

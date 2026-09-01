@@ -34,7 +34,21 @@
 - [x] Legacy: `main.py:/static` + `/chat` помечены `deprecated=True` (Vite /ui/ primary, будет удалено)
 - [x] Наблюдаемость: `main.py:_check_rate_limit` (sliding window 60s, `chat_rate_limit_per_minute`) + `dt` + `est_tokens` лог в `event_stream finally`
 
-Критерий: Фаза 3 done — дифф цветной, Vite готов, legacy deprecated, rate-limit + latency логи.
+## Фаза 4 — Vite & SQLite & Preview (0.5.0) ✅ 2026-09-01
+
+- [x] SQLite default: `core/config.py:use_sqlite=True`, `main.py:lifespan` migrate, `USE_SQLITE` deprecated
+- [x] Vite primary: `vite.config.js:base /ui/`, `ui/index.html` CDN удалён, `main.py:DIST_DIR` primary, `npm run build` ok
+- [x] Workspace file: `GET /api/workspace/file?path=` (sandbox 50k) `routers/workspace.py:129`
+- [x] Tests: `diagnostics_bus` patch для `routers/diagnostics`, `endpoint_url` print→log (caplog), pytest 91 passed
+
+## Фаза 5 — Preview & Delete & SQLite-only & Split (0.6.0) ✅ 2026-09-01
+
+- [x] UI file preview: `ui/index.html:file-preview` + `app.js:openFilePreview` клик по дереву
+- [x] Delete approval: `core/changes.py:propose_delete` + `op=delete` + `core/db.py` `ALTER op`, `tools/registry.py:DeleteFile` (6 инструментов)
+- [x] DB cleanup: `core/history|rooms|changes` только SQLite, JSON удалён, `use_sqlite` deprecated
+- [x] Декомпоз `main.py` 576→116: `routers/rooms|changes|agents|chat|system` + `ui/static/modules/*` ready
+
+Критерий: Фаза 5 done — preview работает, delete с approval, только SQLite, main декомпозирован, тесты зелёные.
 
 ---
 

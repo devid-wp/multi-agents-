@@ -1,6 +1,6 @@
 # Trinity — Карта проекта (для следующего агента)
 
-> Версия карты: 2026-08-31, кодовая база `0.3.0` local alpha. Читай этот файл первым.
+> Версия карты: 2026-09-01, кодовая база `0.6.0` local alpha. Читай этот файл первым.
 
 ## 1. Что это
 
@@ -17,82 +17,93 @@ Trinity — локальная multi-agent система на FastAPI: три �
 
 - **Backend:** FastAPI 0.115 + Uvicorn, Pydantic 2.9, httpx/aiohttp, itsdangerous (cookie), watchfiles (workspace SSE)
 - **LLM:** `core/llm_clients.py` — `OpenAICompatibleClient` база + `NvidiaClient` / `OllamaClient` / `OpenRouterClient` / `GoogleGeminiClient` / `AnthropicClient`. Retry+circuit breaker `with_retry_and_circuit_breaker`.
-- **Frontend:** `ui/` — vanilla JS + Tailwind CDN, без сборки. Legacy `templates/index.html` + `static/` оставлены для совместимости.
-- **Хранение:** JSON-файлы в workspace: `.trinity_sessions/` (история), `.trinity/rooms.json`, `.trinity/changes.json`
+- **Frontend:** `ui/` — vanilla JS + Tailwind (Vite build → `dist/`, `base /ui/`), CDN удалён в 0.5.0. Legacy `templates/index.html` + `static/` deprecated.
+- **Хранение:** SQLite `core/db.py` `.trinity/trinity.db` (history/rooms/changes, JSON fallback удалён в 0.6.0)
 
 ## 3. Структура (что где)
 
 ```
-main.py                 # entry-point, lifespan, localhost_only+local_token middleware (519 строк, было 743)
-routers/workspace.py    # GET /api/workspace/tree + /stream (watchfiles), лимиты из settings
+main.py                 # entry-point 116 строк (было 743 → декомпозирован в routers/* в 0.6.0)
+routers/workspace.py    # GET /api/workspace/tree|file + /stream (watchfiles), лимиты из settings
 routers/diagnostics.py  # GET /api/diagnostics/stream/history (SSE + ring buffer)
-core/config.py          # AppSettings (.env), UserCredentials (сессия), дефолты моделей/URL
+routers/rooms.py        # GET|POST /api/rooms + PUT|DELETE /api/rooms/{id}
+routers/changes.py      # GET /api/changes + POST /api/changes/{id}/decision (op=write|delete)
+routers/agents.py       # GET /api/agents/active + POST /api/agents/switch
+routers/chat.py         # POST /api/chat (SSE, rate-limit) + GET /api/chat/history
+routers/system.py       # GET|POST /api/settings + GET /api/health + legacy /chat
+core/config.py          # AppSettings (.env), UserCredentials (сессия), дефолты моделей/URL (use_sqlite deprecated)
 core/models.py          # ChatMessage, ProgressEvent(kind=agent_start|agent_message|tool_call|tool_result|agent_done|final|strategy|error|info), AgentProviderConfig
 core/llm_clients.py     # 5 клиентов, NvidiaProvider, retry, circuit breaker
-core/history.py         # HistoryManager — load/save + sliding window 40
-core/rooms.py           # RoomStore — комнаты, DEFAULT_ROOMS=[general], session_id = "{client}--room-{id}"
-core/changes.py         # ChangeStore — propose/diff/list/decide, base_hash защита
-core/diagnostics.py     # DiagnosticsBus — deque 500 + fan-out по asyncio.Queue, kinds=tool_call|tool_result|error|tool_execution
+core/db.py              # SQLite backend .trinity/trinity.db + migrate_json_if_needed, op column
+core/history.py         # HistoryManager — SQLite only (sliding window 40)
+core/rooms.py           # RoomStore — SQLite only, DEFAULT_ROOMS=[general]
+core/changes.py         # ChangeStore — propose/propose_delete/diff/list/decide, base_hash защита
+core/diagnostics.py     # DiagnosticsBus — deque 500 + fan-out по asyncio.Queue
 core/session.py         # get_credentials / save_credentials / mask_key (itsdangerous)
-agents/base.py          # Agent (SYSTEM_PROMPT, _call_llm, parse_json_tool_calls, _run_tools, _dispatch_tool, run loop)
+agents/base.py          # Agent (SYSTEM_PROMPT, _call_llm, parse_json_tool_calls, _run_tools)
 agents/planner.py       # PlannerAgent (meta-llama/llama-3-70b)
-agents/critic.py        # CriticAgent (вердикт VERDICT: OK / REVISION)
-agents/executor.py      # ExecutorAgent + _request_final_report (отдельный LLM-вызов для отчета)
-agents/manager.py       # AgentManager — создает 3 клиентов, readiness_report, run_task
+agents/critic.py        # CriticAgent (VERDICT: OK / REVISION)
+agents/executor.py      # ExecutorAgent + _request_final_report
+agents/manager.py       # AgentManager — run_task(strategy=auto|planner|direct)
 tools/base.py           # абстрактный Tool
-tools/file_tool.py      # ReadFile/WriteFile/ReplaceInFile/DeleteFile/SearchInFile/ListDir + _safe_resolve (sandbox)
-tools/registry.py       # ToolRegistry — 5 инструментов в релизе (read/write/replace/search/list), ChangeStore-интеграция
-tools/bash_tool.py etc  # выключены в релизе (не регистрируются)
-trinity/tools/          # дублирующий порт 6 cline-инструментов (через cline_tool_manager в AgentContext) — в релизе не активен
-ui/index.html           # Mission Control layout (topbar + workspace + bridge + composer)
-ui/static/app.js        # 1314 строк: SSE (connectSSE/postSSE), settings modal, bridge render, workspace tree
-ui/static/styles.css    # переменные темы
-tests/conftest.py       # env_sandbox autouse, app_client (ASGI), live_server_url (uvicorn thread) для SSE
-.env.example            # пример переменных
+tools/file_tool.py      # ReadFile/WriteFile/ReplaceInFile/DeleteFile/SearchInFile/ListDir + _safe_resolve
+tools/registry.py       # ToolRegistry — 6 инструментов (read/write/replace/delete/search/list), ChangeStore-интеграция
+ui/index.html           # Mission Control layout + file-preview panel
+ui/static/app.js        # ~1400 строк: SSE, settings, bridge, workspace tree + file preview
+ui/static/styles.css    # темы + .file-preview + diff стили
+ui/static/modules/      # config.js/utils.js/sse.js (Vite-ready)
+tests/conftest.py       # env_sandbox, app_client, live_server_url
+.env.example            # пример переменных (USE_SQLITE deprecated)
 start.sh / start.ps1    # bootstrap скрипты
 ```
 
-## 4. API (main.py)
+## 4. API (routers/*)
 
-| Метод | Путь | Назначение |
-|-------|------|------------|
-| GET | `/` | 307 -> /ui/ |
-| GET | `/ui/` | Mission Control (StaticFiles html=True) |
-| GET | `/chat/` | legacy UI |
-| GET | `/api/settings` | маскированные настройки |
-| POST | `/api/settings` | сохранить в signed cookie `trinity_session` (30д) |
-| POST | `/api/chat` | SSE стрим `ProgressEvent` (центральный) |
-| GET | `/api/diagnostics/stream` | глобальный SSE tool_call/tool_result/error |
-| GET | `/api/diagnostics/history?limit=200` | кольцевой буфер |
-| GET | `/api/workspace/tree?path=.&hidden=0` | снимок дерева (depth 4, 1000 entries) |
-| GET | `/api/workspace/stream` | SSE watchfiles |
-| GET | `/api/rooms` / POST `/api/rooms` | комнаты |
-| GET | `/api/changes` / POST `/api/changes/{id}/decision` | approval диффов |
-| GET | `/api/agents/active` / POST `/api/agents/switch` | активный агент (UI) |
-| GET | `/api/chat/history?session_id=&room_id=` | восстановление bridge |
-| GET | `/api/health` | ollama available/model_installed |
+| Метод | Путь | Назначение | Router |
+|-------|------|------------|--------|
+| GET | `/` | 307 -> /ui/ | `main.py` |
+| GET | `/ui/` | Mission Control (dist/ primary) | `main.py` |
+| GET | `/chat/` | legacy UI (deprecated) | `routers/system.py` |
+| GET | `/api/settings` | маскированные настройки | `system.py` |
+| POST | `/api/settings` | сохранить в cookie | `system.py` |
+| POST | `/api/chat` | SSE стрим `ProgressEvent` | `routers/chat.py` |
+| GET | `/api/diagnostics/stream` | глобальный SSE | `routers/diagnostics.py` |
+| GET | `/api/diagnostics/history?limit=200` | кольцевой буфер | `diagnostics.py` |
+| GET | `/api/workspace/tree?path=.&hidden=0` | снимок дерева | `routers/workspace.py` |
+| GET | `/api/workspace/file?path=` | превью файла (sandbox, 50k) | `workspace.py` |
+| GET | `/api/workspace/stream` | SSE watchfiles | `workspace.py` |
+| GET | `/api/rooms` / POST `/api/rooms` | комнаты | `routers/rooms.py` |
+| PUT | `/api/rooms/{id}` | rename | `rooms.py` |
+| DELETE | `/api/rooms/{id}` | delete | `rooms.py` |
+| GET | `/api/changes` | approval лист | `routers/changes.py` |
+| POST | `/api/changes/{id}/decision` | approve/reject (write/delete) | `changes.py` |
+| GET | `/api/agents/active` | активный агент | `routers/agents.py` |
+| POST | `/api/agents/switch` | switch | `agents.py` |
+| GET | `/api/chat/history?session_id=&room_id=` | восстановление bridge | `routers/chat.py` |
+| GET | `/api/health` | ollama | `system.py` |
 
 ## 5. Потоки данных
 
-**Chat:** `app.js:sendMessage -> postSSE -> main.py:chat:399 -> AgentManager.run_task:141 -> planner.run -> critic loop -> executor.run -> ProgressEvent.to_sse -> StreamingResponse`
+**Chat:** `app.js:sendMessage -> postSSE -> routers/chat.py:chat -> AgentManager.run_task:141 -> planner.run -> critic loop -> executor.run -> ProgressEvent.to_sse -> StreamingResponse`
 
-**Diagnostics:** `ToolRegistry.execute:155 -> diagnostics_bus.publish_tool_execution -> diagnostics_bus.publish (tool_call/result) -> main.py:diagnostics_stream:521 -> EventSource в app.js`
+**Diagnostics:** `ToolRegistry.execute:155 -> diagnostics_bus.publish_tool_execution -> diagnostics_bus.publish (tool_call/result) -> routers/diagnostics.py:diagnostics_stream -> EventSource`
 
-**Workspace:** `main.py:_walk_workspace:592 + awatch -> /api/workspace/stream:687 -> app.js:applyWorkspaceChange`
+**Workspace:** `routers/workspace.py:_walk_workspace + awatch -> /api/workspace/stream -> app.js:applyWorkspaceChange` ; `GET /api/workspace/file -> file-preview panel`
 
-**File approval:** `ToolRegistry.execute (write_file/replace_in_file) -> ChangeStore.propose:39 (diff, base_hash) -> ToolResult "Proposal ID: ..." -> UI refreshChanges -> POST /decision -> ChangeStore.decide:66 (проверка base_hash, атомарная запись)`
+**File approval:** `ToolRegistry.execute (write_file/replace_in_file/delete_file) -> ChangeStore.propose/propose_delete:69 (diff, base_hash, op) -> ToolResult "Proposal ID: ..." -> UI refreshChanges -> POST /decision -> ChangeStore.decide:137 (delete: unlink, write: atom write)`
 
 ## 6. Конфиг
 
 Переменные (`core/config.py:44`): `SESSION_SECRET!`, `WORKSPACE_DIR=.`, `LLM_TIMEOUT_SECONDS=120`, `MAX_ITERATIONS=5`, `PLANNER/CRITIC/EXECUTOR_BASE_URL/MODEL/API_KEY`, `OLLAMA_URL`, `OPENROUTER_API_KEY`. Секреты — в signed cookie, не в `.env` в проде. `settings` — синглтон.
 
-## 7. Состояние (0.3.0)
+## 7. Состояние (0.6.0)
 
-- **Готово:** 3 агента, 3 стратегии, SSE, sandbox, approval, комнаты (general builtin), история с sliding window, workspace watcher, diagnostics bus, healthcheck, Mission Control UI.
-- **Ограничения (CHANGELOG):** local alpha only, нет auth/multi-user, нет rename/delete комнат в UI, JSON без конкурентности, localhost only.
-- **Долг (фаза 1):** DEBUG `print` в `llm_clients.py`/`base.py`, жесткий комментарий `manager.py:59` "ФОРС ОЛЛАМЫ" (фактически — fallback), дубли `tools` vs `trinity/tools`, `threading.Lock` вместо `asyncio.Lock`, монолит `main.py:743`/`app.js:1314`.
+- **Готово (0.5.0):** SQLite default (`core/config.py:use_sqlite=True`, lifespan migrate), Vite dist primary (`vite.config.js:base /ui/`, `main.py:DIST_DIR`), `GET /api/workspace/file` (sandbox 50k), approval delete_file (`ChangeStore op=delete`), SQLite-only (JSON удалён).
+- **Готово (0.6.0):** UI file preview (`ui/index.html:file-preview` + `app.js:openFilePreview`), `delete_file` с approval (6 инструментов), `main.py` 576→116 декомпозирован в `routers/*`, `core/history|rooms|changes` только SQLite, тесты 91 passed (py 3.14).
+- **Ограничения:** local alpha only, single token `TRINITY_LOCAL_TOKEN`, нет multi-user изоляции, legacy `/chat` deprecated.
+- **Долг:** `trinity/tools` дубликат, `threading.Lock` (корректно via sync store), `ui/static/app.js` ~1400 строк — следующий шаг модульный импорт `modules/*.js`.
 
-## 8. Новые модули Фазы 2
+## 8. Новые модули Фазы 2-3
 - `core/config.py:90` — `history_max_messages`, `workspace_max_depth/max_entries`, `llm_circuit_breaker_threshold`, `local_token`
 - `core/llm_clients.py:44` — per-provider circuit breaker `_circuit_errors[key]`
 - `routers/` — вынесено из `main.py`
