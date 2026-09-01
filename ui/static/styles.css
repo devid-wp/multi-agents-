@@ -4,9 +4,8 @@
 
 /*
  * Trinity Mission Control — styles.css
- * Gruvbox dark palette tokens + scrollbar / monospace fallbacks.
- * Tailwind utilities handle layout; CSS vars let us theme via JS too.
- * Vite build: postcss + tailwind пуржит по ui/**/*.{html,js}
+ * Gruvbox dark palette tokens + scrollbar fallbacks.
+ * Tailwind utilities handle layout.
  */
 
 :root {
@@ -1314,19 +1313,14 @@ header#topbar {
     90deg,
     rgba(255,255,255,0.04) 25%,
     rgba(255,255,255,0.10) 50%,
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
 }
-.icon-btn:hover {
-  color: var(--fg);
-  background: var(--bg-2);
-  border-color: var(--accent);
-}
-.settings-btn:hover svg {
-  animation: spin-once 0.5s ease;
-}
-@keyframes spin-once {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(90deg); }
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* Typing indicator */

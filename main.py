@@ -143,7 +143,7 @@ async def lifespan(app: FastAPI):
 # ───────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Trinity — Multi-Agent System",
-    version="0.3.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -170,18 +170,22 @@ async def localhost_only(request: Request, call_next):
     return await call_next(request)
 
 # Статика и шаблоны — legacy /static и /chat помечены deprecated (будут удалены после Vite)
-# Новый UI: /ui/ (Vite build -> dist/, fallback CDN)
+# Новый UI: /ui/ — Vite build -> dist/ primary (0.5.0), fallback на ui/ если dist не собран
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-# Mission Control UI: монтируем каталог ui/ как самостоятельный StaticFiles
-# с html=True, чтобы /ui/ отдавал ui/index.html, а /ui/static/* — ассеты.
-# Каталог может ещё не существовать при первом импорте — создаём.
+# Mission Control UI: Vite primary (dist/) с fallback на ui/ для dev без сборки
+DIST_DIR = os.path.join(BASE_DIR, "dist")
 UI_DIR = os.path.join(BASE_DIR, "ui")
 os.makedirs(os.path.join(UI_DIR, "static"), exist_ok=True)
+_UI_DIR_TO_SERVE = DIST_DIR if (os.path.isdir(DIST_DIR) and os.path.exists(os.path.join(DIST_DIR, "index.html"))) else UI_DIR
+if _UI_DIR_TO_SERVE == DIST_DIR:
+    log.info("Serving Vite build from dist/ at /ui/")
+else:
+    log.info("Serving dev UI from ui/ at /ui/ (run `npm run build` for dist)")
 app.mount(
     "/ui",
-    StaticFiles(directory=UI_DIR, html=True, check_dir=False),
+    StaticFiles(directory=_UI_DIR_TO_SERVE, html=True, check_dir=False),
     name="ui",
 )
 

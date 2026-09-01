@@ -7,39 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/ui/static/styles.css">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    /* Tailwind config: mirror CSS variables so utilities like
-       bg-bg-2, text-fg-dim, border-border, text-info, text-ok, etc. resolve. */
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            bg:       'var(--bg)',
-            'bg-1':   'var(--bg-1)',
-            'bg-2':   'var(--bg-2)',
-            'bg-3':   'var(--bg-3)',
-            fg:       'var(--fg)',
-            'fg-dim': 'var(--fg-dim)',
-            'fg-muted': 'var(--fg-muted)',
-            border:   'var(--border)',
-            accent:   'var(--accent)',
-            'accent-2': 'var(--accent-2)',
-            ok:       'var(--ok)',
-            info:     'var(--info)',
-            critic:   'var(--critic)',
-            executor: 'var(--executor)',
-            error:    'var(--error)',
-          },
-          fontFamily: {
-            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
-          },
-        },
-      },
-    };
-  </script>
+  <link rel="stylesheet" href="./static/styles.css">
 </head>
 <body>
   <!--
@@ -336,6 +304,6 @@
     </div>
   </div>
 
-  <script src="/ui/static/app.js" type="module"></script>
+  <script type="module" src="./static/app.js"></script>
 </body>
 </html>
