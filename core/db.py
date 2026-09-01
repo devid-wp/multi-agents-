@@ -52,6 +52,14 @@ def init_db(workspace: str | None = None) -> Path:
         );
         CREATE INDEX IF NOT EXISTS idx_history_session ON history(session_id);
         """)
+        # migrate: add op column for delete proposals (0.6.0)
+        try:
+            cur = con.execute("PRAGMA table_info(changes)")
+            cols = {row[1] for row in cur.fetchall()}
+            if "op" not in cols:
+                con.execute("ALTER TABLE changes ADD COLUMN op TEXT NOT NULL DEFAULT 'write'")
+        except Exception:
+            pass
         # seed default room if empty
         cur = con.execute("SELECT COUNT(*) FROM rooms")
         if cur.fetchone()[0] == 0:

@@ -24,7 +24,7 @@ from core.diagnostics import diagnostics_bus
 from core.models import ToolCall, ToolResult
 from tools.base import Tool
 from tools.exceptions import SecurityError, ToolValidationError
-from tools.file_tool import ListDir, ReadFile, SearchInFile, WriteFile, ReplaceInFile, _safe_resolve
+from tools.file_tool import DeleteFile, ListDir, ReadFile, SearchInFile, WriteFile, ReplaceInFile, _safe_resolve
 from tools.system_tool import GetSystemStatus
 
 log = logging.getLogger("trinity.tools")
@@ -50,6 +50,7 @@ class ToolRegistry:
             ReadFile(workspace=self.workspace),
             WriteFile(workspace=self.workspace),
             ReplaceInFile(workspace=self.workspace),
+            DeleteFile(workspace=self.workspace),
             SearchInFile(workspace=self.workspace),
             ListDir(workspace=self.workspace),
             GetSystemStatus(),
@@ -86,7 +87,7 @@ class ToolRegistry:
             path_str = str(resolved)
         except PermissionError:
             return
-        if name in ("write_file",):
+        if name in ("write_file", "delete_file"):
             self.touched_paths.add(path_str)
         elif name == "read_file":
             self.read_paths.add(path_str)
@@ -174,10 +175,18 @@ class ToolRegistry:
                 duration_ms=0,
             )
 
-        if call.name in {"write_file", "replace_in_file"}:
+        if call.name in {"write_file", "replace_in_file", "delete_file"}:
             from core.changes import ChangeStore
             try:
                 args = self._validate_arguments(tool, call.arguments)
+                if call.name == "delete_file":
+                    proposal = ChangeStore(self.workspace).propose_delete(args["path"])
+                    return ToolResult(
+                        tool_call_id=call.id,
+                        name=call.name,
+                        success=True,
+                        output=f"Approval required (delete). Proposal ID: {proposal['id']}",
+                    )
                 target = _safe_resolve(self.workspace, args["path"])
                 if call.name == "write_file":
                     content = args["content"]
@@ -232,7 +241,7 @@ class ToolRegistry:
             log.exception("tool %s crashed", call.name)
         dt = int((time.perf_counter() - t0) * 1000)
 
-        if success and call.name in ("read_file", "write_file"):
+        if success and call.name in ("read_file", "write_file", "delete_file"):
             self._track_path(call.name, call.arguments)
 
         return ToolResult(

@@ -33,10 +33,17 @@ class ChangeStore:
             try:
                 init_db(self.workspace)
                 con = sqlite3.connect(str(db_path(self.workspace)))
-                cur = con.execute("SELECT id, path, status, base_hash, content, diff FROM changes ORDER BY rowid")
-                rows = cur.fetchall()
-                con.close()
-                return [{"id":r[0],"path":r[1],"status":r[2],"base_hash":r[3],"content":r[4],"diff":r[5]} for r in rows]
+                # handle op column may not exist in old DBs
+                try:
+                    cur = con.execute("SELECT id, path, status, base_hash, content, diff, op FROM changes ORDER BY rowid")
+                    rows = cur.fetchall()
+                    con.close()
+                    return [{"id":r[0],"path":r[1],"status":r[2],"base_hash":r[3],"content":r[4],"diff":r[5],"op":r[6] if len(r)>6 else "write"} for r in rows]
+                except Exception:
+                    cur = con.execute("SELECT id, path, status, base_hash, content, diff FROM changes ORDER BY rowid")
+                    rows = cur.fetchall()
+                    con.close()
+                    return [{"id":r[0],"path":r[1],"status":r[2],"base_hash":r[3],"content":r[4],"diff":r[5],"op":"write"} for r in rows]
             except Exception:
                 pass
         if not self.path.exists():
@@ -54,8 +61,13 @@ class ChangeStore:
                 con = sqlite3.connect(str(db_path(self.workspace)))
                 con.execute("DELETE FROM changes")
                 for c in changes[-100:]:
-                    con.execute("INSERT INTO changes (id, path, status, base_hash, content, diff) VALUES (?,?,?,?,?,?)",
-                                (c["id"], c["path"], c["status"], c["base_hash"], c["content"], c["diff"]))
+                    op = c.get("op", "write")
+                    try:
+                        con.execute("INSERT INTO changes (id, path, status, base_hash, content, diff, op) VALUES (?,?,?,?,?,?,?)",
+                                    (c["id"], c["path"], c["status"], c["base_hash"], c["content"], c["diff"], op))
+                    except Exception:
+                        con.execute("INSERT INTO changes (id, path, status, base_hash, content, diff) VALUES (?,?,?,?,?,?)",
+                                    (c["id"], c["path"], c["status"], c["base_hash"], c["content"], c["diff"]))
                 con.commit()
                 con.close()
                 return
@@ -82,6 +94,35 @@ class ChangeStore:
             "base_hash": _digest(old_content),
             "content": new_content,
             "diff": diff,
+            "op": "write",
+        }
+        with self._lock:
+            changes = self._load()
+            changes.append(proposal)
+            self._save(changes[-100:])
+        return proposal
+
+    def propose_delete(self, relative_path: str) -> dict:
+        target = _safe_resolve(self.workspace, relative_path)
+        if not target.exists():
+            raise ValueError(f"File not found: {relative_path}")
+        if target.is_dir():
+            raise ValueError(f"Cannot delete directory via delete_file: {relative_path}")
+        old_content = target.read_text(encoding="utf-8") if target.is_file() else ""
+        diff = "".join(difflib.unified_diff(
+            old_content.splitlines(keepends=True),
+            [],
+            fromfile=f"a/{relative_path}",
+            tofile=f"b/{relative_path}",
+        )) or f"--- a/{relative_path}\n+++ b/{relative_path}\n@@ -1 +0,0 @@\n-{old_content[:200]}\n"
+        proposal = {
+            "id": uuid.uuid4().hex,
+            "path": relative_path.replace("\\", "/"),
+            "status": "pending",
+            "base_hash": _digest(old_content),
+            "content": "",
+            "diff": diff,
+            "op": "delete",
         }
         with self._lock:
             changes = self._load()
@@ -106,11 +147,16 @@ class ChangeStore:
                 current = target.read_text(encoding="utf-8") if target.exists() else ""
                 if _digest(current) != proposal["base_hash"]:
                     raise ValueError("file changed after preview; create a new proposal")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                temp = target.with_suffix(target.suffix + ".trinity.tmp")
-                temp.write_text(proposal["content"], encoding="utf-8")
-                os.replace(temp, target)
-                proposal["status"] = "applied"
+                if proposal.get("op") == "delete":
+                    if target.exists():
+                        target.unlink()
+                    proposal["status"] = "applied"
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    temp = target.with_suffix(target.suffix + ".trinity.tmp")
+                    temp.write_text(proposal["content"], encoding="utf-8")
+                    os.replace(temp, target)
+                    proposal["status"] = "applied"
             else:
                 proposal["status"] = "rejected"
             self._save(changes)
