@@ -2,20 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Trinity — ChatGPT style 2026 */
+/* Trinity — ChatGPT OLED 2026 — ultra dark */
 :root {
-  --gpt-bg: #212121;
-  --gpt-sidebar: #171717;
-  --gpt-surface: #2f2f2f;
-  --gpt-surface-2: #3a3a3a;
-  --gpt-border: rgba(255,255,255,0.08);
-  --gpt-border-strong: rgba(255,255,255,0.14);
+  --gpt-bg: #000000;
+  --gpt-sidebar: #0a0a0a;
+  --gpt-surface: #1a1a1a;
+  --gpt-surface-2: #262626;
+  --gpt-border: rgba(255,255,255,0.06);
+  --gpt-border-strong: rgba(255,255,255,0.10);
   --gpt-text: #ececec;
   --gpt-muted: #8e8ea0;
   --gpt-muted-2: #a1a1aa;
-  --gpt-input: #303030;
+  --gpt-input: #1e1e1e;
   --gpt-accent: #ffffff;
-  --gpt-pill: #2f2f2f;
+  --gpt-pill: #1a1a1a;
 }
 
 * { box-sizing: border-box; }
@@ -276,8 +276,8 @@ body.gpt-body {
 .gpt-composer-form { width: min(768px, 92%); }
 .gpt-composer-box {
   display: flex; align-items: flex-end; gap: 8px;
-  background: #303030;
-  border: 1px solid #404040;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
   border-radius: 24px;
   padding: 10px 12px;
 }
@@ -313,24 +313,61 @@ body.gpt-body {
   text-align: center; margin-top: 8px;
 }
 
-/* Modals — keep dark */
+/* Modals — OLED */
 .gpt-modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(8px);
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(12px);
   display: flex; align-items: center; justify-content: center;
   z-index: 9999;
 }
 .gpt-modal {
-  background: #2f2f2f;
+  background: #121212;
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 16px;
-  width: min(560px, 94vw);
+  width: min(480px, 92vw);
   max-height: 90vh;
   overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
 }
-.gpt-modal-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.gpt-modal-header { padding: 18px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center; }
+.gpt-modal-header h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--gpt-text); }
 .gpt-settings-form { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.gpt-room-modal { width: min(420px, 92vw); }
+.gpt-room-modal-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+.gpt-label { font-size: 12px; color: var(--gpt-muted); font-weight: 500; }
+.gpt-input-field {
+  background: #1e1e1e;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--gpt-text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+.gpt-input-field:focus { border-color: rgba(255,255,255,0.16); box-shadow: 0 0 0 3px rgba(255,255,255,0.06); }
+.gpt-error { min-height: 16px; font-size: 12px; color: #f87171; }
+.gpt-confirm-text { font-size: 13px; line-height: 1.5; color: var(--gpt-muted); margin: 0; }
+.gpt-confirm-text strong { color: var(--gpt-text); }
+.btn-danger {
+  background: #ef4444; color: white; border: 1px solid #ef4444;
+  padding: 8px 16px; border-radius: 10px; font-weight: 600; cursor: pointer;
+}
+.btn-danger:hover { background: #dc2626; }
+.gpt-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1a1a1a;
+  border: 1px solid rgba(255,255,255,0.10);
+  color: var(--gpt-text);
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  z-index: 10000;
+  max-width: 90vw;
+}
+.gpt-toast.ok { border-color: rgba(52,211,153,0.3); }
+.gpt-toast.error { border-color: rgba(248,113,113,0.3); }
 
 /* Keep legacy classes for JS compatibility */
 .hidden { display: none !important; }

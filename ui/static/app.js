@@ -117,6 +117,15 @@
       t = setTimeout(() => { t = null; fn(...args); }, ms);
     };
   }
+  function showToast(msg, kind="error") {
+    const el = document.getElementById("gpt-toast");
+    if (!el) { window.alert(msg); return; }
+    el.textContent = msg;
+    el.className = `gpt-toast ${kind}`;
+    el.classList.remove("hidden");
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.add("hidden"), 3500);
+  }
 
   async function refreshHealth() {
     const pill = $("#ollama-status");
@@ -203,14 +212,105 @@
     }
   }
 
+  // ── красивые модалки вместо prompt/alert ───────────────────────
+  function openRoomCreateModal() {
+    const modal = document.getElementById("room-create-modal");
+    const input = document.getElementById("room-name-input");
+    const err = document.getElementById("room-create-error");
+    if (!modal || !input) return Promise.resolve(null);
+    input.value = ""; err.textContent = "";
+    modal.classList.remove("hidden");
+    input.focus();
+    return new Promise((resolve) => {
+      const close = (val) => {
+        modal.classList.add("hidden");
+        input.removeEventListener("keydown", onKey);
+        document.getElementById("btn-create-room-confirm").removeEventListener("click", onConfirm);
+        modal.querySelector("[data-close-create]").removeEventListener("click", onCancel);
+        modal.removeEventListener("click", onBackdrop);
+        resolve(val);
+      };
+      const onConfirm = () => {
+        const name = input.value.trim();
+        if (!name) { err.textContent = "Name is required"; return; }
+        if (name.length > 80) { err.textContent = "Max 80 characters"; return; }
+        close(name);
+      };
+      const onCancel = () => close(null);
+      const onKey = (e) => { if (e.key === "Enter") onConfirm(); if (e.key === "Escape") onCancel(); };
+      const onBackdrop = (e) => { if (e.target === modal) onCancel(); };
+      input.addEventListener("keydown", onKey);
+      document.getElementById("btn-create-room-confirm").addEventListener("click", onConfirm);
+      modal.querySelector("[data-close-create]").addEventListener("click", onCancel);
+      modal.addEventListener("click", onBackdrop);
+    });
+  }
+  function openRoomRenameModal(current) {
+    const modal = document.getElementById("room-rename-modal");
+    const input = document.getElementById("room-rename-input");
+    const err = document.getElementById("room-rename-error");
+    if (!modal || !input) return Promise.resolve(null);
+    input.value = current || ""; err.textContent = "";
+    modal.classList.remove("hidden");
+    input.focus(); input.select();
+    return new Promise((resolve) => {
+      const close = (val) => {
+        modal.classList.add("hidden");
+        input.removeEventListener("keydown", onKey);
+        document.getElementById("btn-rename-room-confirm").removeEventListener("click", onConfirm);
+        modal.querySelector("[data-close-rename]").removeEventListener("click", onCancel);
+        modal.removeEventListener("click", onBackdrop);
+        resolve(val);
+      };
+      const onConfirm = () => {
+        const name = input.value.trim();
+        if (!name) { err.textContent = "Name is required"; return; }
+        if (name.length > 80) { err.textContent = "Max 80 characters"; return; }
+        close(name);
+      };
+      const onCancel = () => close(null);
+      const onKey = (e) => { if (e.key === "Enter") onConfirm(); if (e.key === "Escape") onCancel(); };
+      const onBackdrop = (e) => { if (e.target === modal) onCancel(); };
+      input.addEventListener("keydown", onKey);
+      document.getElementById("btn-rename-room-confirm").addEventListener("click", onConfirm);
+      modal.querySelector("[data-close-rename]").addEventListener("click", onCancel);
+      modal.addEventListener("click", onBackdrop);
+    });
+  }
+  function openRoomDeleteModal(id) {
+    const modal = document.getElementById("room-delete-modal");
+    const nameEl = document.getElementById("room-delete-name");
+    if (!modal) return Promise.resolve(false);
+    if (nameEl) nameEl.textContent = `"${id}"`;
+    modal.classList.remove("hidden");
+    return new Promise((resolve) => {
+      const close = (val) => {
+        modal.classList.add("hidden");
+        document.getElementById("btn-delete-room-confirm").removeEventListener("click", onConfirm);
+        modal.querySelector("[data-close-delete]").removeEventListener("click", onCancel);
+        modal.removeEventListener("click", onBackdrop);
+        document.removeEventListener("keydown", onKey);
+        resolve(val);
+      };
+      const onConfirm = () => close(true);
+      const onCancel = () => close(false);
+      const onKey = (e) => { if (e.key === "Escape") onCancel(); };
+      const onBackdrop = (e) => { if (e.target === modal) onCancel(); };
+      document.getElementById("btn-delete-room-confirm").addEventListener("click", onConfirm);
+      modal.querySelector("[data-close-delete]").addEventListener("click", onCancel);
+      modal.addEventListener("click", onBackdrop);
+      document.addEventListener("keydown", onKey);
+    });
+  }
+
   async function createRoom() {
-    const name = window.prompt("Room name");
+    const name = await openRoomCreateModal();
     if (!name || !name.trim()) return;
     const id = name.trim().toLowerCase()
       .replace(/[^a-z0-9_-]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 40);
-    if (!id) throw new Error("Use at least one Latin letter or digit in the room name.");
+    if (!id) { showToast("Use at least one Latin letter or digit"); return; }
     const response = await fetch(ENDPOINTS.rooms, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -218,12 +318,14 @@
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      throw new Error(data.detail || `Room creation failed (${response.status})`);
+      showToast(data.detail || `Room creation failed (${response.status})`);
+      return;
     }
     state.roomId = id;
     await loadRooms();
     clearBridge();
     await loadSessionHistory();
+    showToast(`Room "${name}" created`, "ok");
   }
 
   async function switchRoom(roomId) {
@@ -234,28 +336,32 @@
   }
 
   async function renameRoom() {
-    const name = window.prompt("New room name", $("#room-select")?.selectedOptions[0]?.textContent || "");
-    if (!name || !name.trim()) return;
     const id = state.roomId;
-    if (id === "general") { window.alert("Cannot rename builtin General room"); return; }
+    if (id === "general") { showToast("Cannot rename builtin General room"); return; }
+    const current = $("#room-select")?.selectedOptions[0]?.textContent || "";
+    const name = await openRoomRenameModal(current);
+    if (!name || !name.trim()) return;
     const res = await fetch(`${ENDPOINTS.rooms}/${encodeURIComponent(id)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: name.trim() }),
     });
-    if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.detail || `Rename failed (${res.status})`); }
+    if (!res.ok) { const d = await res.json().catch(()=>({})); showToast(d.detail || `Rename failed (${res.status})`); return; }
     await loadRooms();
+    showToast("Room renamed", "ok");
   }
 
   async function deleteRoom() {
     const id = state.roomId;
-    if (id === "general") { window.alert("Cannot delete builtin General room"); return; }
-    if (!window.confirm(`Delete room "${id}"?`)) return;
+    if (id === "general") { showToast("Cannot delete builtin General room"); return; }
+    const ok = await openRoomDeleteModal(id);
+    if (!ok) return;
     const res = await fetch(`${ENDPOINTS.rooms}/${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.detail || `Delete failed (${res.status})`); }
+    if (!res.ok) { const d = await res.json().catch(()=>({})); showToast(d.detail || `Delete failed (${res.status})`); return; }
     state.roomId = "general";
     await loadRooms();
     clearBridge();
     await loadSessionHistory();
+    showToast("Room deleted", "ok");
   }
 
   async function decideChange(id, approve) {
@@ -1248,19 +1354,19 @@
       const card = event.target.closest("[data-proposal]");
       if (!button || !card) return;
       void decideChange(card.dataset.proposal, button.dataset.changeAction === "approve")
-        .catch((error) => window.alert(error.message));
+        .catch((error) => showToast(error.message));
     });
     $("#room-select")?.addEventListener("change", (event) => {
       void switchRoom(event.target.value);
     });
     $("#btn-new-room")?.addEventListener("click", () => {
-      void createRoom().catch((error) => window.alert(error.message));
+      void createRoom().catch((error) => showToast(error.message));
     });
     $("#btn-rename-room")?.addEventListener("click", () => {
-      void renameRoom().catch((error) => window.alert(error.message));
+      void renameRoom().catch((error) => showToast(error.message));
     });
     $("#btn-delete-room")?.addEventListener("click", () => {
-      void deleteRoom().catch((error) => window.alert(error.message));
+      void deleteRoom().catch((error) => showToast(error.message));
     });
     // Settings
     settingsForm.addEventListener("submit", saveSettings);

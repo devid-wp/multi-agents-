@@ -166,6 +166,55 @@
     </div>
   </div>
 
+  <!-- Room create modal — красивый UI вместо prompt -->
+  <div id="room-create-modal" class="gpt-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="room-create-title">
+    <div class="gpt-modal gpt-room-modal">
+      <div class="gpt-modal-header"><h3 id="room-create-title">New chat</h3><button class="modal-close-btn" data-close-create aria-label="Close">×</button></div>
+      <div class="gpt-room-modal-body">
+        <label for="room-name-input" class="gpt-label">Room name</label>
+        <input id="room-name-input" type="text" maxlength="80" placeholder="e.g. My project" class="gpt-input-field" autocomplete="off">
+        <div id="room-create-error" class="gpt-error"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" data-close-create>Cancel</button>
+        <button type="button" id="btn-create-room-confirm" class="btn-primary">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Room rename modal -->
+  <div id="room-rename-modal" class="gpt-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="room-rename-title">
+    <div class="gpt-modal gpt-room-modal">
+      <div class="gpt-modal-header"><h3 id="room-rename-title">Rename chat</h3><button class="modal-close-btn" data-close-rename aria-label="Close">×</button></div>
+      <div class="gpt-room-modal-body">
+        <label for="room-rename-input" class="gpt-label">New name</label>
+        <input id="room-rename-input" type="text" maxlength="80" class="gpt-input-field" autocomplete="off">
+        <div id="room-rename-error" class="gpt-error"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" data-close-rename>Cancel</button>
+        <button type="button" id="btn-rename-room-confirm" class="btn-primary">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Room delete modal -->
+  <div id="room-delete-modal" class="gpt-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="room-delete-title">
+    <div class="gpt-modal gpt-room-modal">
+      <div class="gpt-modal-header"><h3 id="room-delete-title">Delete chat?</h3><button class="modal-close-btn" data-close-delete aria-label="Close">×</button></div>
+      <div class="gpt-room-modal-body">
+        <p class="gpt-confirm-text">This will delete <strong id="room-delete-name"></strong>. This action cannot be undone.</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" data-close-delete>Cancel</button>
+        <button type="button" id="btn-delete-room-confirm" class="btn-danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="gpt-toast" class="gpt-toast hidden" role="status" aria-live="polite"></div>
+
   <script type="module" src="./static/app.js"></script>
 </body>
 </html>
