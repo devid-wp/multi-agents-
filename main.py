@@ -1,5 +1,5 @@
 """
-main.py — FastAPI entry-point (0.6.0, декомпозирован).
+main.py — FastAPI entry-point (0.7.0, ChatGPT OLED).
 
 Эндпоинты вынесены в routers/*:
   routers/workspace  — /api/workspace/tree|file|stream
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     log.info("🛑 Trinity shutting down.")
 
 
-app = FastAPI(title="Trinity — Multi-Agent System", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="Trinity — Multi-Agent System", version="0.7.0", lifespan=lifespan)
 
 
 @app.middleware("http")
