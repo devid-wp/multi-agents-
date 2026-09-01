@@ -384,12 +384,12 @@ class TestLLMAndToolValidation:
 
     @pytest.mark.asyncio
     async def test_release_registry_excludes_delete_file(self, temp_workspace: Path) -> None:
-        """Release registry keeps search but does not expose destructive delete."""
+        """Release registry now exposes delete_file with approval (0.6.0)."""
         from tools.registry import ToolRegistry
 
         reg = ToolRegistry(workspace=str(temp_workspace))
         names = reg.list_names()
-        assert "delete_file" not in names
+        assert "delete_file" in names
         assert "search_in_file" in names
 
 

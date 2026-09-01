@@ -11,11 +11,7 @@ from threading import Lock  # sync store; FastAPI вызывает через as
 import sqlite3
 
 from tools.file_tool import _safe_resolve
-try:
-    from core.db import db_path, init_db, is_enabled
-except ImportError:
-    def is_enabled(ws=None): return False  # type: ignore
-    def init_db(ws=None): return None  # type: ignore
+from core.db import db_path, init_db
 
 
 def _digest(content: str) -> str:
@@ -29,54 +25,36 @@ class ChangeStore:
         self._lock = Lock()
 
     def _load(self) -> list[dict]:
-        if is_enabled(self.workspace):
-            try:
-                init_db(self.workspace)
-                con = sqlite3.connect(str(db_path(self.workspace)))
-                # handle op column may not exist in old DBs
-                try:
-                    cur = con.execute("SELECT id, path, status, base_hash, content, diff, op FROM changes ORDER BY rowid")
-                    rows = cur.fetchall()
-                    con.close()
-                    return [{"id":r[0],"path":r[1],"status":r[2],"base_hash":r[3],"content":r[4],"diff":r[5],"op":r[6] if len(r)>6 else "write"} for r in rows]
-                except Exception:
-                    cur = con.execute("SELECT id, path, status, base_hash, content, diff FROM changes ORDER BY rowid")
-                    rows = cur.fetchall()
-                    con.close()
-                    return [{"id":r[0],"path":r[1],"status":r[2],"base_hash":r[3],"content":r[4],"diff":r[5],"op":"write"} for r in rows]
-            except Exception:
-                pass
-        if not self.path.exists():
-            return []
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
-        except (OSError, json.JSONDecodeError):
+            init_db(self.workspace)
+            con = sqlite3.connect(str(db_path(self.workspace)))
+            try:
+                cur = con.execute("SELECT id, path, status, base_hash, content, diff, op FROM changes ORDER BY rowid")
+                rows = cur.fetchall()
+                con.close()
+                return [{"id":r[0],"path":r[1],"status":r[2],"base_hash":r[3],"content":r[4],"diff":r[5],"op":r[6] if len(r)>6 else "write"} for r in rows]
+            except Exception:
+                cur = con.execute("SELECT id, path, status, base_hash, content, diff FROM changes ORDER BY rowid")
+                rows = cur.fetchall()
+                con.close()
+                return [{"id":r[0],"path":r[1],"status":r[2],"base_hash":r[3],"content":r[4],"diff":r[5],"op":"write"} for r in rows]
+        except Exception:
             return []
 
     def _save(self, changes: list[dict]) -> None:
-        if is_enabled(self.workspace):
+        init_db(self.workspace)
+        con = sqlite3.connect(str(db_path(self.workspace)))
+        con.execute("DELETE FROM changes")
+        for c in changes[-100:]:
+            op = c.get("op", "write")
             try:
-                init_db(self.workspace)
-                con = sqlite3.connect(str(db_path(self.workspace)))
-                con.execute("DELETE FROM changes")
-                for c in changes[-100:]:
-                    op = c.get("op", "write")
-                    try:
-                        con.execute("INSERT INTO changes (id, path, status, base_hash, content, diff, op) VALUES (?,?,?,?,?,?,?)",
-                                    (c["id"], c["path"], c["status"], c["base_hash"], c["content"], c["diff"], op))
-                    except Exception:
-                        con.execute("INSERT INTO changes (id, path, status, base_hash, content, diff) VALUES (?,?,?,?,?,?)",
-                                    (c["id"], c["path"], c["status"], c["base_hash"], c["content"], c["diff"]))
-                con.commit()
-                con.close()
-                return
+                con.execute("INSERT INTO changes (id, path, status, base_hash, content, diff, op) VALUES (?,?,?,?,?,?,?)",
+                            (c["id"], c["path"], c["status"], c["base_hash"], c["content"], c["diff"], op))
             except Exception:
-                pass
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_suffix(".tmp")
-        temp.write_text(json.dumps(changes, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(temp, self.path)
+                con.execute("INSERT INTO changes (id, path, status, base_hash, content, diff) VALUES (?,?,?,?,?,?)",
+                            (c["id"], c["path"], c["status"], c["base_hash"], c["content"], c["diff"]))
+        con.commit()
+        con.close()
 
     def propose(self, relative_path: str, new_content: str) -> dict:
         target = _safe_resolve(self.workspace, relative_path)
