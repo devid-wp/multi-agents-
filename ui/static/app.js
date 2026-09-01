@@ -925,15 +925,19 @@
 
   function setWsStatus(s) {
     wsStatusEl.classList.remove("live", "reconnecting", "offline");
+    const hintEl = document.getElementById("workspace-status-hint");
     if (s === "open" || s === "live") {
       wsStatusEl.classList.add("live");
       wsStatusEl.textContent = "● watching";
+      if (hintEl) hintEl.textContent = "watching";
     } else if (s === "reconnecting") {
       wsStatusEl.classList.add("reconnecting");
       wsStatusEl.textContent = "● reconnecting…";
+      if (hintEl) hintEl.textContent = "reconnecting…";
     } else {
       wsStatusEl.classList.add("offline");
       wsStatusEl.textContent = "● offline";
+      if (hintEl) hintEl.textContent = "offline";
     }
   }
 
