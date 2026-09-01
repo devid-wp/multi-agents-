@@ -82,9 +82,9 @@ body.gpt-body {
 .gpt-room-controls { display: flex; gap: 6px; align-items: center; }
 .gpt-select {
   flex: 1;
-  background: #212121;
+  background: #1e1e1e;
   color: var(--gpt-text);
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid #2a2a2a;
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 12px;
@@ -378,10 +378,12 @@ body.gpt-body {
 .tree ul { list-style: none; padding-left: 12px; margin: 0; }
 .tree li { padding: 2px 0; }
 
-/* Scrollbars */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 999px; }
+/* Scrollbars — почти невидимый OLED */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb { background: #222; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #2e2e2e; }
 ::-webkit-scrollbar-track { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: #222 transparent; }
 
 /* Diff colors */
 .diff-colored { background: #0f0f0f; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 8px; overflow: auto; max-height: 260px; font-size: 12px; }
@@ -392,6 +394,37 @@ body.gpt-body {
 .diff-ctx { color: #c9c9c9; display: block; }
 .change-proposal { padding: 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; margin-bottom: 10px; background: rgba(255,255,255,0.03); }
 .change-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* Settings — перекрашиваем старые cyber-стили в OLED */
+.agents-config-container { display: flex; flex-direction: column; gap: 12px; }
+.agent-config-block {
+  background: #0f0f0f;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: 14px;
+}
+.agent-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.agent-header h3 { margin: 0; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gpt-muted); }
+.cyber-input, .cyber-select, .api-key-input, .settings-field input, .settings-field select, .agent-panel input, .agent-panel select {
+  background: #1e1e1e !important;
+  border: 1px solid #2a2a2a !important;
+  color: #ececec !important;
+  border-radius: 8px !important;
+  padding: 8px 10px !important;
+  font-size: 13px !important;
+}
+.cyber-input::placeholder, .gpt-input-field::placeholder { color: #6b7280; }
+.cyber-input:focus, .cyber-select:focus, .api-key-input:focus { border-color: #3a3a3a !important; box-shadow: 0 0 0 2px rgba(255,255,255,0.04) !important; outline: none !important; }
+.cyber-select { background-image: url('data:image/svg+xml;charset=US-ASCII,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="%239ca3af"><path d="M2 4l4 4 4-4z"/></svg>') !important; background-repeat: no-repeat !important; background-position: right 10px center !important; padding-right: 28px !important; }
+.settings-field label { color: #a1a1aa !important; font-size: 12px !important; }
+.settings-field { gap: 6px !important; }
+.api-keys-container { gap: 6px !important; }
+.btn-ghost { background: #1a1a1a !important; border: 1px solid #2a2a2a !important; color: #ececec !important; border-radius: 10px !important; }
+.btn-ghost:hover { background: #262626 !important; }
+.btn-primary { background: #ffffff !important; color: #000 !important; border: 1px solid #ffffff !important; border-radius: 10px !important; font-weight: 600 !important; }
+.btn-primary:hover { background: #e5e5e5 !important; }
+.modal-close-btn { color: #9ca3af !important; }
+.modal-close-btn:hover { color: #ececec !important; background: rgba(255,255,255,0.06) !important; }
 
 /* Fix workspaceStatus hint sync */
 #workspace-status { display: none; }
