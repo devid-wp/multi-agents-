@@ -46,11 +46,14 @@ def _reset_diagnostics_bus() -> Generator[None, None, None]:
     import core.diagnostics as diag_mod
     import main as main_mod
     import tools.registry as reg_mod
+    import routers.diagnostics as diag_router_mod
 
     new_bus = diag_mod.DiagnosticsBus()
     diag_mod.diagnostics_bus = new_bus
     main_mod.diagnostics_bus = new_bus
     reg_mod.diagnostics_bus = new_bus
+    # router holds its own imported reference (фаза 2 split), патчим и его
+    diag_router_mod.diagnostics_bus = new_bus
 
     global diagnostics_bus
     diagnostics_bus = new_bus
