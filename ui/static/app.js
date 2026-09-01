@@ -25,6 +25,7 @@
     agentsActive:  "/api/agents/active",
     agentsSwitch:  "/api/agents/switch",
     wsTree:        "/api/workspace/tree",       // GET ?path=. &hidden=0|1
+    wsFile:        "/api/workspace/file",       // GET ?path=
     wsStream:      "/api/workspace/stream",     // GET, persistent SSE
     settingsGet:   "/api/settings",
     settingsSet:   "/api/settings",
@@ -970,6 +971,33 @@
     wsTreeEl.appendChild(renderTreeNode(root, 0, true));
   }
 
+  // ── File preview (GET /api/workspace/file) ───────────────────────
+  async function openFilePreview(path) {
+    const panel = $("#file-preview");
+    const pathEl = $("#file-preview-path");
+    const contentEl = $("#file-preview-content");
+    const metaEl = $("#file-preview-meta");
+    if (!panel || !pathEl || !contentEl) return;
+    pathEl.textContent = path;
+    contentEl.textContent = "Loading…";
+    metaEl.textContent = "";
+    panel.classList.remove("hidden");
+    try {
+      const r = await fetch(`${ENDPOINTS.wsFile}?path=${encodeURIComponent(path)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+      const data = await r.json();
+      contentEl.textContent = data.content || "(empty)";
+      metaEl.textContent = `${data.size} bytes${data.truncated ? " — truncated" : ""}`;
+    } catch (e) {
+      contentEl.textContent = `Failed to load: ${e}`;
+      metaEl.textContent = "";
+    }
+  }
+  function closeFilePreview() {
+    const panel = $("#file-preview");
+    if (panel) panel.classList.add("hidden");
+  }
+
   function renderTreeNode(node, depth, isRoot = false) {
     const li = document.createElement("li");
     const div = document.createElement("div");
@@ -986,6 +1014,12 @@
       meta.className = "meta";
       meta.textContent = formatSize(node.size);
       div.appendChild(meta);
+      div.style.cursor = "pointer";
+      div.title = `Preview ${node.path}`;
+      div.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void openFilePreview(node.path);
+      });
     }
     li.appendChild(div);
 
@@ -1295,6 +1329,7 @@
 
     // Workspace tree
     $("#btn-refresh-tree").addEventListener("click", loadWorkspaceTree);
+    $("#btn-close-preview")?.addEventListener("click", closeFilePreview);
     loadWorkspaceTree();
     state.sse.ws = connectSSE(ENDPOINTS.wsStream, applyWorkspaceChange, {
       onStatus: setWsStatus,
