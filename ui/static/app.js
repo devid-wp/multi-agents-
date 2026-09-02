@@ -81,6 +81,16 @@ import { connectSSE, postSSE } from "./modules/sse.js";
     }
   }
 
+  async function refreshVersion() {
+    const pill = $("#trinity-version");
+    if (!pill) return;
+    try {
+      const r = await fetch(ENDPOINTS.version, { cache: "no-store" });
+      const d = await r.json();
+      if (d.version) pill.textContent = `Trinity · v${d.version}`;
+    } catch {}
+  }
+
   function renderDiff(diff) {
     if (!diff) return '<pre class="diff-empty">(empty diff)</pre>';
     const lines = diff.split("\n");
@@ -1102,6 +1112,7 @@ import { connectSSE, postSSE } from "./modules/sse.js";
   // ════════════════════════════════════════════════════════════
   async function boot() {
     await refreshHealth();
+    await refreshVersion();
     await loadRooms();
     await refreshChanges();
     $("#change-proposals")?.addEventListener("click", (event) => {

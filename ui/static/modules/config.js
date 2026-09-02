@@ -11,8 +11,11 @@ export const ENDPOINTS = {
   settingsGet:   "/api/settings",
   settingsSet:   "/api/settings",
   health:        "/api/health",
+  version:       "/api/version",
   rooms:         "/api/rooms",
   changes:       "/api/changes",
+  backup:        "/api/backup",
+  backupIntegrity: "/api/backup/integrity",
 };
 
 export const SSE_BACKOFF_MS = [500, 1000, 2000, 4000, 5000];
