@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.1 - 2026-09-02
+
+- UI modules: `ui/static/app.js` now imports `connectSSE/postSSE` from `ui/static/modules/sse.js` (1425→1270, -155 lines, external AbortSignal linked)
+- Routing: removed deprecated `app.mount("/static")` and legacy `GET /chat` Jinja handlers (Vite `dist/` primary since 0.5.0, `routers/system.py` cleaned)
+- Tools docs: `trinity/tools/README.md` clarifies `tools/` (local 6) vs `trinity/tools` (Gemini Cline bridge, disabled) vs `extracted_tools` (JS reference)
+- Tests: `tests/test_ui_release_contract.py` updated for modular SSE (timeout string in `sse.js`)
+- Build: `package.json 0.7.1`, `main.py 0.7.1`, Vite 7 modules 30.85k
+
+## 0.7.0 - 2026-09-01
+
+- UI: ChatGPT OLED redesign (dark, animated settings, room modals), `ui/static/app.js` 0.7.0 uses ES modules `config`/`utils`
+- Settings: 3×1fr grid, custom provider API/Base/Model row, Ollama auto-URL, dark inputs/scrollbars
+- Deps: Python 3.14 compat — loosened `pydantic` pins
+- Docs: `AGENT.md` for continuation
+
 ## 0.6.0 - 2026-09-01
 
 - UI file preview: `ui/index.html:file-preview` + `ui/static/app.js:openFilePreview` (click tree → `GET /api/workspace/file`)

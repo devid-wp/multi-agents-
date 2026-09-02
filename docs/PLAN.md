@@ -50,12 +50,22 @@
 
 Критерий: Фаза 5 done — preview работает, delete с approval, только SQLite, main декомпозирован, тесты зелёные.
 
+## Фаза 6 — Cleanup OLED (0.7.1) ✅ 2026-09-02
+
+- [x] SSE модули: `app.js` 1425→1270 `import {connectSSE,postSSE} from modules/sse.js` + linked AbortSignal (timeout + external abort)
+- [x] Legacy удалён: `main.py:app.mount("/static")` + `routers/system.py:legacy_chat` (`/chat`) удалены, Vite `dist/` единственный источник
+- [x] Tools docs: `trinity/tools/README.md` clarifies `tools/` (6 active, approval) vs `trinity/tools` (Gemini bridge, disabled `cline_tool_manager=None`) vs `extracted_tools` (JS ref)
+- [x] Contract test: `tests/test_ui_release_contract.py` checks `sse.js` for timeout string
+- [x] Versions: `package.json 0.7.1`, `main.py 0.7.1`, `CHANGELOG 0.7.1`, `PROJECT_MAP 0.7.1`
+
+Критерий: `pytest -q` 91 passed, `npm run build` 7 modules, нет `deprecated` роутов.
+
 ---
 
 ### Что НЕ делаем
-- Не добавляем новых агентов/провайдеров до конца Фазы 1
-- Не вводим multi-user изоляцию до Фазы 2 (sqlite)
-- Не трогаем `extracted_tools/tools.js` до решения о судьбе `trinity/tools/`
+- Не добавляем новых агентов/провайдеров без нужды (стек frozen: FastAPI/Vite/Tailwind/SQLite/httpx)
+- Не вводим multi-user изоляцию (single token `TRINITY_LOCAL_TOKEN`)
+- Не удаляем `trinity/tools` (нужен для Gemini) и `extracted_tools` (JS reference) — только документируем
 
 ### Как работать следующему агенту
 1. Прочитай `docs/PROJECT_MAP.md`

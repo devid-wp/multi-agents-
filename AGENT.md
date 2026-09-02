@@ -3,25 +3,26 @@
 > Для следующего агента / для продолжения с этим же. Прочитай первым.
 
 ## Что это
-Trinity `0.7.0` local alpha — FastAPI multi-agent `Planner → Critic → Executor`, `127.0.0.1` only, `WORKSPACE_DIR` sandbox, SSE `ProgressEvent`. 20 коммитов ahead `origin/main` (2026-09-01).
+Trinity `0.7.1` local alpha — FastAPI multi-agent `Planner → Critic → Executor`, `127.0.0.1` only, `WORKSPACE_DIR` sandbox, SSE `ProgressEvent`. 23 коммита ahead `origin/main` (2026-09-02).
 
 Карта: `docs/PROJECT_MAP.md:1`, план: `docs/PLAN.md:1`, чейнджлог: `CHANGELOG.md:1`.
 
 ## Стек (не добавлять новое без надобности)
 - Backend: `FastAPI` + `Uvicorn` + `Pydantic` + `httpx/aiohttp` + `itsdangerous` + `watchfiles` + `aiosqlite` + `pytest-asyncio`/`respx`
-- Frontend: `ui/` vanilla JS + `Tailwind` + `Vite` (`base /ui/` → `dist/`), `ui/static/modules/config|utils|sse.js` (ES-модули)
+- Frontend: `ui/` vanilla JS + `Tailwind` + `Vite` (`base /ui/` → `dist/`), `ui/static/modules/config|utils|sse.js` (ES-модули, app.js 1270 строк)
 - Хранение: `SQLite` `.trinity/trinity.db` (`core/db.py`), JSON удалён в 0.6.0
 
 Если нужная фича уже есть в стеке — используй его. **Не подключай новые фреймворки без надобности.**
 
-## Структура (актуально 0.7.0)
+## Структура (актуально 0.7.1)
 ```
-main.py 116 строк (декомпозирован)
-routers/workspace.py|diagnostics.py|rooms.py|changes.py|agents.py|chat.py|system.py
+main.py 113 строк (декомпозирован, /static удалён)
+routers/workspace.py|diagnostics.py|rooms.py|changes.py|agents.py|chat.py|system.py (legacy /chat удалён)
 core/config|models|db|history|rooms|changes|diagnostics|session
-agents/base|planner|critic|executor|manager
+agents/base|planner|critic|executor|manager (cline_tool_manager=None — local alpha)
 tools/file_tool|registry (6 tools: read/write/replace/delete/search/list + approval)
-ui/index.html (ChatGPT OLED) + ui/static/app.js (ES modules) + styles.css + modules/*
+trinity/tools/ (Gemini Cline bridge, disabled — см. trinity/tools/README.md)
+ui/index.html (ChatGPT OLED) + ui/static/app.js 1270 (ES modules config/utils/sse) + styles.css + modules/*
 ```
 
 ## Правила продолжения (от владельца — строго)
@@ -42,9 +43,10 @@ pytest -q
 npm run build
 ```
 
-## Что осталось
-- Версии уже `0.7.0` (`main.py:65`, `package.json:3`), доки синхронизированы.
-- `app.js` уже импортит `modules/config+utils`, осталось вычистить остатки дублей `trinity/tools` vs `tools`.
-- Deprecated `/static` и `/chat` можно удалить после финального перехода на Vite.
+## Что осталось (на 0.7.1 — фаза 6 done)
+- Версии `0.7.1` (`main.py:65`, `package.json:3`), доки синхронизированы.
+- `app.js` импортит `modules/config+utils+sse` (1425→1270).
+- Deprecated `/static` и `/chat` удалены (Vite `dist/` primary).
+- `trinity/tools` vs `tools` — документирован (`trinity/tools/README.md`).
 
-Продолжай с `docs/PLAN.md` фаза 6.
+Следующий шаг — фаза 7 по `docs/PLAN.md` (если появится) или фичи из бэклога.
