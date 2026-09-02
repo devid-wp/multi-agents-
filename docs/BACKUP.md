@@ -36,6 +36,9 @@ systemctl --user start trinity
 
 # Проверка целостности:
 sqlite3 "$DB" "PRAGMA integrity_check;"
+# или через API (boxed):
+curl http://127.0.0.1:8000/api/backup/integrity | jq
+curl -OJ http://127.0.0.1:8000/api/backup  # скачать trinity.db
 ```
 
 ## Восстановление

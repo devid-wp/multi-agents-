@@ -1,11 +1,12 @@
-"""routers/system.py — settings + health (legacy /chat удалён в 0.7.1, Vite /ui/ primary)."""
+"""routers/system.py — settings + health + backup (legacy /chat удалён в 0.7.1, Vite /ui/ primary)."""
 from __future__ import annotations
 
+import sqlite3
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from core.config import UserCredentials
 from core.models import AgentProviderConfig, SettingsPayload, SettingsResponse
@@ -109,3 +110,35 @@ async def health():
     except (httpx.HTTPError, ValueError):
         pass
     return {"ok": True, "service": "trinity", "ollama": ollama}
+
+
+@router.get("/api/backup")
+async def backup_db():
+    """Скачать trinity.db (localhost only, для бэкапа беты)."""
+    from core.db import db_path
+
+    p = db_path()
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="No database yet (no .trinity/trinity.db)")
+    return FileResponse(str(p), filename="trinity.db", media_type="application/x-sqlite3")
+
+
+@router.get("/api/backup/integrity")
+async def backup_integrity():
+    """PRAGMA integrity_check для живучести беты."""
+    from core.db import db_path
+
+    p = db_path()
+    if not p.exists():
+        return {"ok": False, "result": "no db file"}
+    try:
+        con = sqlite3.connect(str(p))
+        try:
+            cur = con.execute("PRAGMA integrity_check;")
+            row = cur.fetchone()
+            result = row[0] if row else "unknown"
+            return {"ok": result == "ok", "result": result, "path": str(p)}
+        finally:
+            con.close()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"integrity_check failed: {e}")
