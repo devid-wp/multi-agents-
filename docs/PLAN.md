@@ -60,6 +60,15 @@
 
 Критерий: `pytest -q` 91 passed, `npm run build` 7 modules, нет `deprecated` роутов.
 
+## Фаза 7 — Boxed 0.8.0 ✅ 2026-09-02
+
+- [x] CI strict: `ruff.toml` `select E/F ignore E402/E501`, `.github/workflows/ci.yml` без `|| true` (ruff+mypy 0 errors, autofix 18)
+- [x] Systemd portable: `systemd/trinity.service` `__TRINITY_HOME__` template + `install.sh` `sed` substitution (no hardcoded `%h/Projects`)
+- [x] Docs boxed: `docs/INSTALL.md` + `docs/BACKUP.md` (установка/обновление/бэкап `.trinity/trinity.db` + `scripts/build-release.sh`)
+- [x] Artifact: `package.json 0.8.0`, `main.py 0.8.0`, `trinity-0.8.0.tar.gz` (189K, sha256), `.gitignore` boxed artifacts
+
+Критерий: `pytest -q` 91 passed, `ruff check` 0, `mypy` 0, `npm run build` 7 modules, `build-release.sh` 189K tarball.
+
 ---
 
 ### Что НЕ делаем

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 - 2026-09-02 (boxed)
+
+- Boxed: `ruff.toml` strict `E/F` (ignore `E402/E501`), `.github/workflows/ci.yml` without `|| true` (91 passed, mypy 0 errors)
+- Systemd: `systemd/trinity.service` portable `__TRINITY_HOME__` template + `install.sh` `sed` substitution (no hardcoded `%h/Projects`)
+- Docs: `docs/INSTALL.md` (Arch/Windows/systemd/Vite) + `docs/BACKUP.md` (`.trinity/trinity.db` backup/restore/migrate)
+- Version: `package.json 0.8.0`, `main.py 0.8.0`, Vite 7 modules 30.85k, boxed artifact `trinity-0.8.0.tar.gz`
+
 ## 0.7.1 - 2026-09-02
 
 - UI modules: `ui/static/app.js` now imports `connectSSE/postSSE` from `ui/static/modules/sse.js` (1425→1270, -155 lines, external AbortSignal linked)

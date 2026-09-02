@@ -70,3 +70,7 @@ htmlcov/
 
 .ruff_cache/
 
+# Boxed artifacts
+trinity-*.tar.gz
+trinity-*.tar.gz.sha256
+
