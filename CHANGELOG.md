@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0 - 2026-09-02
+
+- Final: boxed `0.8.0` + beta `0.8.1` + public beta `0.9.0` → `1.0.0` local release
+- Audit: `ruff 0` `mypy 0` `pytest 91/2` `npm build` 31.14k, no `static/templates`, headers `DENY/nosniff`, backup API OK
+- Docs freeze: `docs/PLAN.md` phase 10, `docs/PROJECT_MAP.md` 1.0, `AGENT.md` 1.0, `README 1.0`
+- Artifact: `trinity-1.0.0.tar.gz` via `scripts/build-release.sh`, tags `v0.8.0` `v0.8.1` `v0.9.0` `v1.0.0`
+
 ## 0.9.0 - 2026-09-02 (public beta)
 
 - Security: `main.py:66` `localhost_only` adds `X-Content-Type-Options nosniff` + `X-Frame-Options DENY` + `Referrer-Policy no-referrer` + `Cache-Control no-store` for `/api/`, `GET /api/version` exempt from token

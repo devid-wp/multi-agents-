@@ -1,6 +1,6 @@
 # Trinity — Карта проекта (для следующего агента)
 
-> Версия карты: 2026-09-02, кодовая база `0.9.0` local alpha. Читай этот файл первым.
+> Версия карты: 2026-09-02, кодовая база `1.0.0` local alpha. Читай этот файл первым.
 
 ## 1. Что это
 
@@ -17,20 +17,20 @@ Trinity — локальная multi-agent система на FastAPI: три �
 
 - **Backend:** FastAPI 0.115 + Uvicorn, Pydantic 2.9, httpx/aiohttp, itsdangerous (cookie), watchfiles (workspace SSE)
 - **LLM:** `core/llm_clients.py` — `OpenAICompatibleClient` база + `NvidiaClient` / `OllamaClient` / `OpenRouterClient` / `GoogleGeminiClient` / `AnthropicClient`. Retry+circuit breaker `with_retry_and_circuit_breaker`.
-- **Frontend:** `ui/` — vanilla JS + Tailwind (Vite build → `dist/`, `base /ui/`), CDN удалён в 0.5.0. Legacy `templates/index.html` + `static/` удалены в 0.9.0.
+- **Frontend:** `ui/` — vanilla JS + Tailwind (Vite build → `dist/`, `base /ui/`), CDN удалён в 0.5.0. Legacy `templates/index.html` + `static/` удалены в 1.0.0.
 - **Хранение:** SQLite `core/db.py` `.trinity/trinity.db` (history/rooms/changes, JSON fallback удалён в 0.6.0)
 
 ## 3. Структура (что где)
 
 ```
-main.py                 # entry-point 113 строк (было 743 → декомпозирован в routers/* в 0.6.0, /static удалён в 0.9.0)
+main.py                 # entry-point 113 строк (было 743 → декомпозирован в routers/* в 0.6.0, /static удалён в 1.0.0)
 routers/workspace.py    # GET /api/workspace/tree|file + /stream (watchfiles), лимиты из settings
 routers/diagnostics.py  # GET /api/diagnostics/stream/history (SSE + ring buffer)
 routers/rooms.py        # GET|POST /api/rooms + PUT|DELETE /api/rooms/{id}
 routers/changes.py      # GET /api/changes + POST /api/changes/{id}/decision (op=write|delete)
 routers/agents.py       # GET /api/agents/active + POST /api/agents/switch
 routers/chat.py         # POST /api/chat (SSE, rate-limit) + GET /api/chat/history
-routers/system.py       # GET|POST /api/settings + GET /api/health (legacy /chat удалён в 0.9.0)
+routers/system.py       # GET|POST /api/settings + GET /api/health (legacy /chat удалён в 1.0.0)
 core/config.py          # AppSettings (.env), UserCredentials (сессия), дефолты моделей/URL (use_sqlite deprecated)
 core/models.py          # ChatMessage, ProgressEvent(kind=agent_start|agent_message|tool_call|tool_result|agent_done|final|strategy|error|info), AgentProviderConfig
 core/llm_clients.py     # 5 клиентов, NvidiaProvider, retry, circuit breaker
@@ -96,7 +96,7 @@ start.sh / start.ps1    # bootstrap скрипты
 
 Переменные (`core/config.py:44`): `SESSION_SECRET!`, `WORKSPACE_DIR=.`, `LLM_TIMEOUT_SECONDS=120`, `MAX_ITERATIONS=5`, `PLANNER/CRITIC/EXECUTOR_BASE_URL/MODEL/API_KEY`, `OLLAMA_URL`, `OPENROUTER_API_KEY`. Секреты — в signed cookie, не в `.env` в проде. `settings` — синглтон.
 
-## 7. Состояние (0.9.0)
+## 7. Состояние (1.0.0)
 
 - **Готово (0.5.0):** SQLite default (`core/config.py:use_sqlite=True`, lifespan migrate), Vite dist primary (`vite.config.js:base /ui/`, `main.py:DIST_DIR`), `GET /api/workspace/file` (sandbox 50k), approval delete_file (`ChangeStore op=delete`), SQLite-only (JSON удалён).
 - **Готово (0.6.0):** UI file preview (`ui/index.html:file-preview` + `app.js:openFilePreview`), `delete_file` с approval (6 инструментов), `main.py` 576→116 декомпозирован в `routers/*`, `core/history|rooms|changes` только SQLite, тесты 91 passed (py 3.14).
@@ -105,6 +105,7 @@ start.sh / start.ps1    # bootstrap скрипты
 - **Готово (0.8.0 boxed):** `ruff.toml` strict `E/F`, CI без `|| true`, systemd `__TRINITY_HOME__` portable, `docs/INSTALL.md`+`BACKUP.md`, `scripts/build-release.sh` 189K tarball.
 - **Готово (0.8.1 beta):** `TRINITY_DATA_DIR` (`core/db.py:_data_root`), `GET /api/backup`+`/integrity` (`routers/system.py:114`), `workspace` ignore `.trinity`, `diagnostics_history_max` from settings.
 - **Готово (0.9.0 public beta):** headers `nosniff/DENY`, `GET /api/version`, `static/templates` removed, version pill `Trinity v0.9.0` + `/api/version` fetch.
+- **Готово (1.0.0):** boxed+beta → release, audit `ruff 0/mypy 0/91 passed`, no legacy, `trinity-1.0.0.tar.gz`, docs freeze.
 - **Ограничения:** local alpha only, single token `TRINITY_LOCAL_TOKEN`, нет multi-user изоляции.
 - **Долг:** `trinity/tools` (Gemini bridge, disabled) vs `tools/` (active 6) — документирован, `threading.Lock` корректен via sync store.
 

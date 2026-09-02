@@ -3,7 +3,7 @@
 > Для следующего агента / для продолжения с этим же. Прочитай первым.
 
 ## Что это
-Trinity `0.9.0` local alpha — FastAPI multi-agent `Planner → Critic → Executor`, `127.0.0.1` only, `WORKSPACE_DIR` sandbox, SSE `ProgressEvent`. 23 коммита ahead `origin/main` (2026-09-02).
+Trinity `1.0.0` local alpha — FastAPI multi-agent `Planner → Critic → Executor`, `127.0.0.1` only, `WORKSPACE_DIR` sandbox, SSE `ProgressEvent`. 23 коммита ahead `origin/main` (2026-09-02).
 
 Карта: `docs/PROJECT_MAP.md:1`, план: `docs/PLAN.md:1`, чейнджлог: `CHANGELOG.md:1`.
 
@@ -14,7 +14,7 @@ Trinity `0.9.0` local alpha — FastAPI multi-agent `Planner → Critic → Exec
 
 Если нужная фича уже есть в стеке — используй его. **Не подключай новые фреймворки без надобности.**
 
-## Структура (актуально 0.9.0)
+## Структура (актуально 1.0.0)
 ```
 main.py 113 строк (декомпозирован, /static удалён)
 routers/workspace.py|diagnostics.py|rooms.py|changes.py|agents.py|chat.py|system.py (legacy /chat удалён)
@@ -43,10 +43,10 @@ pytest -q
 npm run build
 ```
 
-## Что осталось (на 0.9.0 public beta — фаза 9 done)
-- Версии `0.9.0` (`main.py:65`, `package.json:3`), `ui/index.html` `v0.9.0` pill, `GET /api/version`.
-- Security headers `nosniff/DENY/no-referrer/no-store`, `static/templates` removed (1228 del), Vite 31.14k.
-- `TRINITY_DATA_DIR` external, `GET /api/backup`+`/integrity`, `workspace` ignore `.trinity`, `ruff.toml` strict.
+## Что осталось (на 1.0.0 — фаза 10 done, релиз)
+- Версии `1.0.0` (`main.py:65`, `package.json:3`), `ui/index.html` `v1.0.0` pill, `GET /api/version` headers `DENY`.
+- Audit `ruff 0` `mypy 0` `pytest 91/2` `npm build` 31.14k, no `static/templates`, boxed+beta → release.
+- `TRINITY_DATA_DIR` external, `GET /api/backup`+`/integrity`, `workspace` ignore `.trinity`, `ruff.toml` strict, `INSTALL.md`/`BACKUP.md`.
 - `trinity/tools` vs `tools` — документирован (`trinity/tools/README.md`).
 
-Следующий шаг — фаза 10 по `docs/PLAN.md` (если появится) или релиз `1.0` (multi-user изоляция в бэклоге).
+Следующий шаг — `1.0.0` готов к коробке: `git push --tags` + `scripts/build-release.sh 1.0.0`. Далее — `1.x` multi-user если нужно.

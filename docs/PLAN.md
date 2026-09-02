@@ -87,6 +87,15 @@
 
 Критерий: `/api/version` 200 `v0.9.0`, headers `DENY`/`nosniff`, `pytest 91`, `npm build` 31.14k, no `static/`/`templates/`.
 
+## Фаза 10 — 1.0.0 ✅ 2026-09-02
+
+- [x] Final audit: `ruff 0` `mypy 0` `pytest 91/2` green, no `static/templates`, `GET /api/version` + `/api/backup/integrity` OK, headers nosniff
+- [x] Bump: `package.json 1.0.0`, `main.py 1.0.0`, `ui/index.html v1.0.0`, `CHANGELOG 1.0.0` (boxed+beta+public beta → release)
+- [x] Freeze: `docs/PROJECT_MAP.md` 1.0, `AGENT.md` 1.0, `README 1.0` — docs/PLAN phase 10, tags `v0.8.0` `v0.8.1` `v0.9.0` `v1.0.0`
+- [x] Artifact: `scripts/build-release.sh 1.0.0` → `trinity-1.0.0.tar.gz` 190K + sha256, Vite 31.14k
+
+Критерий: `1.0.0` boxed local release — 91 passed, ruff/mypy 0, no legacy, version pill, backup API, TRINITY_DATA_DIR viable.
+
 ---
 
 ### Что НЕ делаем
