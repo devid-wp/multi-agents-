@@ -74,9 +74,21 @@ async def localhost_only(request: Request, call_next):
         xtoken = request.headers.get("x-trinity-token", "")
         bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
         if bearer != token and xtoken != token:
-            if request.url.path not in ("/api/health",):
+            if request.url.path not in ("/api/health", "/api/version"):
                 return JSONResponse(status_code=401, content={"detail": "Invalid local token"})
-    return await call_next(request)
+    response = await call_next(request)
+    # Security headers (boxed 0.9.0) — no new framework, just headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/version")
+async def version():
+    return {"ok": True, "version": app.version, "service": "trinity"}
 
 # Mission Control UI: Vite build -> dist/ primary, fallback ui/
 DIST_DIR = os.path.join(BASE_DIR, "dist")
