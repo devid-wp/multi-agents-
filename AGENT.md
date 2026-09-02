@@ -3,7 +3,7 @@
 > Для следующего агента / для продолжения с этим же. Прочитай первым.
 
 ## Что это
-Trinity `0.8.0` local alpha — FastAPI multi-agent `Planner → Critic → Executor`, `127.0.0.1` only, `WORKSPACE_DIR` sandbox, SSE `ProgressEvent`. 23 коммита ahead `origin/main` (2026-09-02).
+Trinity `0.8.1` local alpha — FastAPI multi-agent `Planner → Critic → Executor`, `127.0.0.1` only, `WORKSPACE_DIR` sandbox, SSE `ProgressEvent`. 23 коммита ahead `origin/main` (2026-09-02).
 
 Карта: `docs/PROJECT_MAP.md:1`, план: `docs/PLAN.md:1`, чейнджлог: `CHANGELOG.md:1`.
 
@@ -14,7 +14,7 @@ Trinity `0.8.0` local alpha — FastAPI multi-agent `Planner → Critic → Exec
 
 Если нужная фича уже есть в стеке — используй его. **Не подключай новые фреймворки без надобности.**
 
-## Структура (актуально 0.8.0)
+## Структура (актуально 0.8.1)
 ```
 main.py 113 строк (декомпозирован, /static удалён)
 routers/workspace.py|diagnostics.py|rooms.py|changes.py|agents.py|chat.py|system.py (legacy /chat удалён)
@@ -43,10 +43,10 @@ pytest -q
 npm run build
 ```
 
-## Что осталось (на 0.8.0 boxed — фаза 7 done)
-- Версии `0.8.0` (`main.py:65`, `package.json:3`), boxed artifact `trinity-0.8.0.tar.gz` (189K, `scripts/build-release.sh`).
-- `app.js` импортит `modules/config+utils+sse` (1425→1270), `ruff.toml` strict, CI без `|| true`.
-- Systemd portable `__TRINITY_HOME__`, доки `docs/INSTALL.md`+`BACKUP.md`, legacy удалён.
+## Что осталось (на 0.8.1 beta — фаза 8 done)
+- Версии `0.8.1` (`main.py:65`, `package.json:3`), boxed `0.8.0` + beta `0.8.1`.
+- `TRINITY_DATA_DIR` external `.trinity`, `GET /api/backup`+`/integrity` (`routers/system.py:114`), `workspace` ignore `.trinity`.
+- `ruff.toml` strict, CI без `|| true`, systemd `__TRINITY_HOME__`, `docs/INSTALL.md`+`BACKUP.md`.
 - `trinity/tools` vs `tools` — документирован (`trinity/tools/README.md`).
 
-Следующий шаг — фаза 8 по `docs/PLAN.md` (бета живучесть: backup endpoint, .trinity вне workspace) или фичи из бэклога.
+Следующий шаг — фаза 9 по `docs/PLAN.md` (если появится) или фичи из бэклога. Бета готова к жизни вне workspace.

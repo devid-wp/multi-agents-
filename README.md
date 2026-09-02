@@ -1,8 +1,8 @@
 # Trinity — Multi-Agent System for autonomous development
 
-> Local alpha `0.8.0` (см. CHANGELOG). Запускайте только на `127.0.0.1` и направляйте
+> Local alpha `0.8.1` (см. CHANGELOG). Запускайте только на `127.0.0.1` и направляйте
 > `WORKSPACE_DIR` на отдельную рабочую копию. Изменения файлов от агентов
-> требуют ручного подтверждения в UI. Vite `dist/` primary, legacy `/static`/`/chat` удалены в 0.8.0.
+> требуют ручного подтверждения в UI. Vite `dist/` primary, legacy `/static`/`/chat` удалены в 0.8.1.
 
 ## Проверка alpha-релиза
 

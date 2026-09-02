@@ -69,6 +69,15 @@
 
 Критерий: `pytest -q` 91 passed, `ruff check` 0, `mypy` 0, `npm run build` 7 modules, `build-release.sh` 189K tarball.
 
+## Фаза 8 — Beta Viability (0.8.1) ✅ 2026-09-02
+
+- [x] Data external: `core/config.py:data_dir` (`TRINITY_DATA_DIR`) + `core/db.py:_data_root()` — `.trinity` вне `WORKSPACE_DIR`, `main.py` log `db_path()`, `BACKUP.md` + `.env.example`
+- [x] Backup API: `GET /api/backup` (FileResponse) + `GET /api/backup/integrity` (`PRAGMA integrity_check`) `routers/system.py:114`
+- [x] Viability: `routers/workspace.py` ignore `.trinity/.trinity_sessions` (no DB leak), `core/diagnostics.py` `diagnostics_history_max` from settings
+- [x] Versions: `package.json 0.8.1`, `main.py 0.8.1`, `CHANGELOG 0.8.1`, `PROJECT_MAP 0.8.1`
+
+Критерий: `TRINITY_DATA_DIR=/tmp/test` → `db_path` external, `/api/backup` 200, `pytest 91 passed`, `ruff 0`, `mypy 0`.
+
 ---
 
 ### Что НЕ делаем

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 - 2026-09-02 (beta viability)
+
+- Data: `TRINITY_DATA_DIR` env (`core/config.py:data_dir` + `core/db.py:_data_root()`) — external `.trinity` outside `WORKSPACE_DIR`, `BACKUP.md` updated
+- Backup API: `GET /api/backup` (FileResponse `trinity.db`) + `GET /api/backup/integrity` (`PRAGMA integrity_check`) `routers/system.py:114`
+- Box: `routers/workspace.py` ignore `.trinity/.trinity_sessions` even when `hidden=1`, `core/diagnostics.py` `diagnostics_history_max` from settings
+- Version: `package.json 0.8.1`, `main.py 0.8.1`, 91 passed
+
 ## 0.8.0 - 2026-09-02 (boxed)
 
 - Boxed: `ruff.toml` strict `E/F` (ignore `E402/E501`), `.github/workflows/ci.yml` without `|| true` (91 passed, mypy 0 errors)
