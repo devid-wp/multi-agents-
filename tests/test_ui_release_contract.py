@@ -17,7 +17,8 @@ def test_ui_contains_minimum_room_controls() -> None:
 
 def test_history_and_terminal_error_states_are_visible() -> None:
     js = _read("ui/static/app.js")
+    sse = _read("ui/static/modules/sse.js")
     assert "data.messages.forEach" in js
-    assert "Request timed out after 3 minutes" in js
+    assert "Request timed out after 3 minutes" in (js + sse)
     assert "setRunningUI(false)" in js
     assert "refreshChanges()" in js

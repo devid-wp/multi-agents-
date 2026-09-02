@@ -1,40 +1,17 @@
-"""routers/system.py — settings + health + legacy UI (вынесено из main.py 0.6.0)."""
+"""routers/system.py — settings + health (legacy /chat удалён в 0.7.1, Vite /ui/ primary)."""
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 
-from core.config import (
-    DEFAULT_CRITIC_MODEL,
-    DEFAULT_EXECUTOR_MODEL,
-    DEFAULT_NVIDIA_URL,
-    DEFAULT_OPENROUTER_URL,
-    DEFAULT_PLANNER_MODEL,
-    UserCredentials,
-    settings,
-)
+from core.config import UserCredentials
 from core.models import AgentProviderConfig, SettingsPayload, SettingsResponse
 from core.session import get_credentials, mask_key, save_credentials
 
 router = APIRouter(tags=["system"])
-
-# templates needed for legacy /chat — initialized lazily to avoid circular import
-_templates: Jinja2Templates | None = None
-
-
-def _get_templates() -> Jinja2Templates:
-    global _templates
-    if _templates is None:
-        from pathlib import Path
-
-        base = Path(__file__).resolve().parent.parent
-        _templates = Jinja2Templates(directory=str(base / "templates"))
-    return _templates
 
 
 def _validate_url(value: Optional[str]) -> Optional[str]:
@@ -132,23 +109,3 @@ async def health():
     except (httpx.HTTPError, ValueError):
         pass
     return {"ok": True, "service": "trinity", "ollama": ollama}
-
-
-# Legacy — deprecated, используйте /ui/ (Vite)
-@router.get("/chat/", response_class=HTMLResponse, deprecated=True, include_in_schema=False)
-@router.get("/chat", response_class=HTMLResponse, deprecated=True, include_in_schema=False)
-async def legacy_chat(request: Request):
-    creds = get_credentials(request)
-    return _get_templates().TemplateResponse(
-        request,
-        "index.html",
-        {
-            "request": request,
-            "default_openrouter_url": DEFAULT_OPENROUTER_URL,
-            "default_nvidia_url": DEFAULT_NVIDIA_URL,
-            "default_ollama_url": "http://localhost:11434",
-            "default_planner_model": (creds.planner and creds.planner.model_name) or DEFAULT_PLANNER_MODEL,
-            "default_critic_model": (creds.critic and creds.critic.model_name) or DEFAULT_CRITIC_MODEL,
-            "default_executor_model": (creds.executor and creds.executor.model_name) or DEFAULT_EXECUTOR_MODEL,
-        },
-    )

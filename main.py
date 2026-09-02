@@ -1,5 +1,5 @@
 """
-main.py — FastAPI entry-point (0.7.0, ChatGPT OLED).
+main.py — FastAPI entry-point (0.7.1).
 
 Эндпоинты вынесены в routers/*:
   routers/workspace  — /api/workspace/tree|file|stream
@@ -8,7 +8,7 @@ main.py — FastAPI entry-point (0.7.0, ChatGPT OLED).
   routers/changes    — /api/changes
   routers/agents     — /api/agents/*
   routers/chat       — POST /api/chat + GET /api/chat/history
-  routers/system     — /api/settings, /api/health, legacy /chat
+  routers/system     — /api/settings, /api/health
 """
 from __future__ import annotations
 
@@ -79,9 +79,6 @@ async def localhost_only(request: Request, call_next):
             if request.url.path not in ("/api/health",):
                 return JSONResponse(status_code=401, content={"detail": "Invalid local token"})
     return await call_next(request)
-
-# Legacy static (deprecated, Vite dist primary)
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 # Mission Control UI: Vite build -> dist/ primary, fallback ui/
 DIST_DIR = os.path.join(BASE_DIR, "dist")
