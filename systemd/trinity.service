@@ -4,9 +4,10 @@
 # Пользовательский юнит (не требует root): запускает uvicorn
 # в виртуальном окружении, созданном install.sh.
 #
-# Установка:
+# Установка (boxed 0.8.0 — портативно, не хардкод):
+#   TRINITY_HOME="$(pwd)"
 #   mkdir -p ~/.config/systemd/user
-#   cp systemd/trinity.service ~/.config/systemd/user/
+#   sed "s|__TRINITY_HOME__|$TRINITY_HOME|g" systemd/trinity.service > ~/.config/systemd/user/trinity.service
 #   systemctl --user daemon-reload
 #   systemctl --user enable --now trinity.service
 #
@@ -22,22 +23,22 @@
 
 [Unit]
 Description=Trinity — Multi-Agent System (FastAPI / uvicorn)
-Documentation=file://%h/Projects/multi_agents/README.md
+Documentation=file://__TRINITY_HOME__/README.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/Projects/multi_agents
+WorkingDirectory=__TRINITY_HOME__
 
 # Виртуальное окружение из install.sh
-Environment="PATH=%h/Projects/multi_agents/.venv/bin:/usr/bin"
+Environment="PATH=__TRINITY_HOME__/.venv/bin:/usr/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONDONTWRITEBYTECODE=1"
 # Подхватываем .env, если есть
-EnvironmentFile=-%h/Projects/multi_agents/.env
+EnvironmentFile=-__TRINITY_HOME__/.env
 
-ExecStart=%h/Projects/multi_agents/.venv/bin/uvicorn main:app \
+ExecStart=__TRINITY_HOME__/.venv/bin/uvicorn main:app \
     --host 127.0.0.1 \
     --port 8000 \
     --no-server-header \

@@ -165,8 +165,9 @@ ${GREEN}Trinity установлена.${RESET}
     uvicorn main:app --host 0.0.0.0 --port 8000
 
 Запуск как пользовательский демон (systemd):
+    TRINITY_HOME="\$(pwd)"
     mkdir -p ~/.config/systemd/user
-    cp systemd/trinity.service ~/.config/systemd/user/
+    sed "s|__TRINITY_HOME__|\$TRINITY_HOME|g" systemd/trinity.service > ~/.config/systemd/user/trinity.service
     systemctl --user daemon-reload
     systemctl --user enable --now trinity.service
     journalctl --user -u trinity -f
