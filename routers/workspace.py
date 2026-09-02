@@ -29,6 +29,7 @@ router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 _WORKSPACE_IGNORE_DIRS = frozenset({
     ".git", "__pycache__", "node_modules", ".venv", "venv",
     ".mypy_cache", ".pytest_cache", ".ruff_cache", ".idea", ".vscode",
+    ".trinity", ".trinity_sessions",
 })
 _WORKSPACE_IGNORE_FILE_SUFFIXES = (".pyc", ".pyo")
 

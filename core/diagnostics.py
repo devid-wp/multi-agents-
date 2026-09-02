@@ -204,7 +204,16 @@ class DiagnosticsBus:
         self._buffer.clear()
 
 
+def _history_max_from_settings() -> int:
+    try:
+        from core.config import settings as _s
+
+        return int(getattr(_s, "diagnostics_history_max", DEFAULT_HISTORY_MAX))
+    except Exception:
+        return DEFAULT_HISTORY_MAX
+
+
 # ───────────────────────────────────────────────────────────────────
-# Синглтон
+# Синглтон — лимит из settings (box 0.8.1)
 # ───────────────────────────────────────────────────────────────────
-diagnostics_bus = DiagnosticsBus()
+diagnostics_bus = DiagnosticsBus(history_max=_history_max_from_settings())
