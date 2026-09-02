@@ -31,11 +31,19 @@ export function connectSSE(url, onEvent, { onStatus, name = "sse" } = {}) {
 }
 
 export async function postSSE(url, body, onEvent, { signal } = {}) {
-  // Thin wrapper over fetch+ReadableStream — см. app.js:postSSE
-  const controller = signal ? null : new AbortController();
-  const sig = signal || controller.signal;
+  // Поддерживает внешний AbortSignal (из app.js state.abortController)
+  const controller = new AbortController();
+  const sig = controller.signal;
+  let onExternalAbort = null;
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else {
+      onExternalAbort = () => controller.abort(signal.reason);
+      signal.addEventListener("abort", onExternalAbort, { once: true });
+    }
+  }
   let reader = null;
-  const timeoutId = setTimeout(() => { onEvent({ kind: "error", content: "Request timed out after 3 minutes. Try a smaller task." }); try { controller?.abort(); } catch {} }, 180_000);
+  const timeoutId = setTimeout(() => { onEvent({ kind: "error", content: "Request timed out after 3 minutes. Try a smaller task." }); try { controller.abort(); } catch {} }, 180_000);
   try {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: sig });
     if (!res.ok) { let t=""; try{ t=await res.text(); }catch{} onEvent({ kind:"error", content:`HTTP ${res.status}: ${t.slice(0,400)}`}); return; }
@@ -48,6 +56,6 @@ export async function postSSE(url, body, onEvent, { signal } = {}) {
     }
     if (buffer.trim().startsWith("data:")) { const json=buffer.trim().slice(5).trim(); if(json) try{ onEvent(JSON.parse(json)); }catch{}}
   } catch (err) { if (err.name !== "AbortError") onEvent({ kind:"error", content:String(err)}); }
-  finally { clearTimeout(timeoutId); }
-  return { close(){ try{ controller?.abort(); }catch{} if(reader) try{ reader.cancel(); }catch{} } };
+  finally { clearTimeout(timeoutId); if (signal && onExternalAbort) try { signal.removeEventListener("abort", onExternalAbort); } catch {} }
+  return { close(){ try{ controller.abort(); }catch{} if(reader) try{ reader.cancel(); }catch{} } };
 }

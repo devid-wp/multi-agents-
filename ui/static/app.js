@@ -1,8 +1,9 @@
 /* Trinity — ChatGPT OLED 0.7.0
  * Теперь с ES-модулями: config/utils/sse вынесены в ui/static/modules/*
  */
-import { ENDPOINTS, SSE_BACKOFF_MS, PING_TIMEOUT_MS } from "./modules/config.js";
+import { ENDPOINTS } from "./modules/config.js";
 import { $, $$, escapeHtml, safeJson, truncate, formatTime, formatMs, agentEmoji, debounce, basename, dirname, formatSize, cssEscape } from "./modules/utils.js";
+import { connectSSE, postSSE } from "./modules/sse.js";
 
 (() => {
   "use strict";
@@ -305,170 +306,7 @@ import { $, $$, escapeHtml, safeJson, truncate, formatTime, formatMs, agentEmoji
     await loadWorkspaceTree();
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 4. SSE clients
-  // ════════════════════════════════════════════════════════════
-
-  /**
-   * Persistent SSE connection with auto-reconnect (exponential backoff).
-   * onEvent receives a parsed JSON object.
-   * onStatus receives "open" | "reconnecting" | "offline".
-   * Returns a handle { close() }.
-   */
-  function connectSSE(url, onEvent, { onStatus, name = "sse" } = {}) {
-    let attempt = 0;
-    let es = null;
-    let closed = false;
-    let firstFailureAt = null;
-    let pingTimer = null;
-
-    function setStatus(s) {
-      if (onStatus) onStatus(s);
-    }
-
-    function armPing() {
-      if (pingTimer) clearTimeout(pingTimer);
-      pingTimer = setTimeout(() => {
-        if (firstFailureAt == null) firstFailureAt = Date.now();
-        if (Date.now() - firstFailureAt > PING_TIMEOUT_MS) {
-          setStatus("offline");
-        } else {
-          setStatus("reconnecting");
-        }
-      }, PING_TIMEOUT_MS);
-    }
-
-    function scheduleReconnect() {
-      if (closed) return;
-      const delay = SSE_BACKOFF_MS[Math.min(attempt, SSE_BACKOFF_MS.length - 1)];
-      attempt++;
-      armPing();
-      setStatus("reconnecting");
-      setTimeout(connect, delay);
-    }
-
-    function connect() {
-      if (closed) return;
-      try {
-        es = new EventSource(url);
-      } catch (err) {
-        console.warn(`[${name}] EventSource ctor failed`, err);
-        scheduleReconnect();
-        return;
-      }
-      es.onopen = () => {
-        attempt = 0;
-        firstFailureAt = null;
-        if (pingTimer) { clearTimeout(pingTimer); pingTimer = null; }
-        setStatus("open");
-      };
-      es.onmessage = (msg) => {
-        if (!msg.data) return;
-        try {
-          const ev = JSON.parse(msg.data);
-          onEvent(ev);
-        } catch (err) {
-          console.warn(`[${name}] bad json`, msg.data, err);
-        }
-      };
-      es.onerror = () => {
-        try { es.close(); } catch {}
-        es = null;
-        scheduleReconnect();
-      };
-    }
-    connect();
-
-    return {
-      close() {
-        closed = true;
-        if (pingTimer) clearTimeout(pingTimer);
-        if (es) { try { es.close(); } catch {} }
-        es = null;
-      },
-    };
-  }
-
-  /**
-   * POST + SSE helper. /api/chat is POST-only. Uses fetch + ReadableStream
-   * to read "data: …\n\n" frames. Returns { close() } to abort the stream.
-   */
-  async function postSSE(url, body, onEvent) {
-    const controller = new AbortController();
-    state.abortController = controller;
-    let reader = null;
-    const timeoutId = setTimeout(() => {
-      onEvent({ kind: "error", content: "Request timed out after 3 minutes. Try a smaller task." });
-      controller.abort();
-    }, 180_000);
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        let bodyText = "";
-        try {
-          bodyText = await res.text();
-        } catch (_err) {
-          bodyText = "<unreadable response>";
-        }
-        onEvent({ kind: "error", content: `HTTP ${res.status}: ${truncate(bodyText, 400)}` });
-        return;
-      }
-      if (!res.body) {
-        const bodyText = await res.text().catch(() => "");
-        onEvent({ kind: "error", content: `No response stream: ${truncate(bodyText, 400)}` });
-        return;
-      }
-      reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let idx;
-        while ((idx = buffer.indexOf("\n\n")) !== -1) {
-          const frame = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 2);
-          if (!frame.startsWith("data:")) continue;
-          const json = frame.slice(5).trim();
-          if (!json) continue;
-          try {
-            onEvent(JSON.parse(json));
-          } catch (err) {
-            console.warn("[chat] bad json frame", json, err);
-          }
-        }
-      }
-      if (buffer.trim().startsWith("data:")) {
-        const json = buffer.trim().slice(5).trim();
-        if (json) {
-          try {
-            onEvent(JSON.parse(json));
-          } catch (err) {
-            console.warn("[chat] bad json frame on flush", json, err);
-          }
-        }
-      }
-    } catch (err) {
-      if (err.name !== "AbortError") {
-        onEvent({ kind: "error", content: String(err) });
-      }
-    } finally {
-      clearTimeout(timeoutId);
-      state.abortController = null;
-    }
-    return {
-      close() {
-        try { controller.abort(); } catch {}
-        if (reader) { try { reader.cancel(); } catch {} }
-      },
-    };
-  }
+  // 4. SSE clients — imported from modules/sse.js (connectSSE, postSSE)
 
   // ════════════════════════════════════════════════════════════
   // 5. Settings modal
@@ -1149,7 +987,11 @@ import { $, $$, escapeHtml, safeJson, truncate, formatTime, formatMs, agentEmoji
     const creds = buildEphemeralCreds();
     if (creds) payload.ephemeral_credentials = creds;
 
-    const stop = await postSSE(ENDPOINTS.chat, payload, (ev) => {
+    const controller = new AbortController();
+    state.abortController = controller;
+    let stop = null;
+    try {
+      stop = await postSSE(ENDPOINTS.chat, payload, (ev) => {
       if (!ev || !ev.kind) return;
       ev.timestamp = ev.timestamp || Date.now() / 1000;
       renderBridgeEvent(ev);
@@ -1186,7 +1028,10 @@ import { $, $$, escapeHtml, safeJson, truncate, formatTime, formatMs, agentEmoji
         updateAgentIndicatorState(ev.agent, "ready");
         state.activeAgent = null;
       }
-    });
+    }, { signal: controller.signal });
+    } finally {
+      state.abortController = null;
+    }
     // Save handle for Stop button
     state.chatStop = stop;
     setRunningUI(false);
