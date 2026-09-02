@@ -30,7 +30,7 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
 import httpx
 
 from core.config import settings
-from core.models import AgentName, ChatMessage, ToolCall
+from core.models import AgentName, ChatMessage, Role
 
 log = logging.getLogger("trinity.llm")
 
@@ -357,11 +357,6 @@ class NvidiaClient(BaseLLMClient):
             payload["tools"] = tools
 
         url = provider.endpoint_url()
-        headers = self._headers(provider)
-        masked_headers = {
-            **headers,
-            "Authorization": f"Bearer {provider.api_key[:6]}...{provider.api_key[-4:]}",
-        }
         log.debug("[NVIDIA->%s] POST %s payload_model=%s tools=%s", agent.value, url, payload.get("model"), len(tools) if tools else 0)
 
         async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -663,7 +658,7 @@ class GoogleGeminiClient(BaseLLMClient):
             candidate = data["candidates"][0]
             parts = candidate["content"]["parts"]
         except (KeyError, IndexError):
-            return ChatMessage(role="assistant", content="", tool_calls=None)
+            return ChatMessage(role=Role.ASSISTANT, content="", tool_calls=None)
 
         text = ""
         tool_calls = []
@@ -685,7 +680,7 @@ class GoogleGeminiClient(BaseLLMClient):
                 })
 
         return ChatMessage(
-            role="assistant",
+            role=Role.ASSISTANT,
             content=text,
             tool_calls=tool_calls if tool_calls else None
         )
@@ -721,7 +716,7 @@ class AnthropicClient(BaseLLMClient):
             if m.role == "system":
                 system_instruction += m.content + "\n"
             elif m.role == "assistant":
-                content_blocks = []
+                content_blocks: list[dict[str, Any]] = []
                 if m.content:
                     content_blocks.append({"type": "text", "text": m.content})
                 if m.tool_calls:
@@ -813,7 +808,7 @@ class AnthropicClient(BaseLLMClient):
                 })
 
         return ChatMessage(
-            role="assistant",
+            role=Role.ASSISTANT,
             content=text,
             tool_calls=tool_calls if tool_calls else None
         )

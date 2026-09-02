@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, List, Optional
 
 from core.config import (
     DEFAULT_CRITIC_MODEL, DEFAULT_EXECUTOR_MODEL, DEFAULT_NVIDIA_URL,
@@ -17,7 +17,6 @@ from core.config import (
     UserCredentials, settings,
 )
 from core.llm_clients import (
-    BaseLLMClient,
     LLMError,
     NvidiaClient,
     OllamaClient,
@@ -28,7 +27,6 @@ from core.models import (
     AgentName,
     ChatMessage,
     ProgressEvent,
-    Role,
 )
 from tools.registry import ToolRegistry
 
@@ -237,9 +235,9 @@ class AgentManager:
                         f"План от Planner:\n\n{plan_text}\n\nОцени его по критериям.",
                         history=history,
                     ))
-                except Exception as e:
+                except Exception:
                     log.exception("critic.run() crashed")
-                    yield ProgressEvent(kind="info", agent=AgentName.MANAGER, content=f"⚠ Critic упал; считаем план OK.")
+                    yield ProgressEvent(kind="info", agent=AgentName.MANAGER, content="⚠ Critic упал; считаем план OK.")
                     break
 
                 verdict = _safe_verdict(verdict_msg)
@@ -253,7 +251,7 @@ class AgentManager:
                     break
 
                 if i >= settings.max_iterations - 1:
-                    yield ProgressEvent(kind="info", agent=AgentName.MANAGER, content=f"⚠️ Достигнут лимит итераций. Передаю план Executor-у как есть.")
+                    yield ProgressEvent(kind="info", agent=AgentName.MANAGER, content="⚠️ Достигнут лимит итераций. Передаю план Executor-у как есть.")
                     break
 
                 if verdict.upper().startswith("VERDICT: REVISION"):
@@ -263,7 +261,7 @@ class AgentManager:
                             f"Critic обнаружил проблемы:\n\n{verdict}\n\nИсходный план:\n\n{plan_text}\n\nПерепиши план с учётом замечаний.",
                             history=history,
                         ))
-                    except Exception as e:
+                    except Exception:
                         log.exception("planner revision crashed")
                         break
 

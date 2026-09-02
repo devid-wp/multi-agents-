@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from core.config import UserCredentials, settings
-from core.models import AgentName, ChatRequest, ProgressEvent
+from core.models import ChatRequest, ProgressEvent
 from core.rooms import RoomStore
 from core.session import get_credentials
 

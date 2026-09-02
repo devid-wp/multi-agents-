@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -227,5 +227,4 @@ class ProgressEvent(BaseModel):
 
     def to_sse(self) -> str:
         """Форматирует в SSE-протокол (data: <json>\\n\\n)."""
-        import json
         return f"data: {self.model_dump_json()}\n\n"

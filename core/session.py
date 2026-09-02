@@ -10,7 +10,6 @@ core/session.py
 
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from fastapi import Request

@@ -157,7 +157,7 @@ class ExecutorAgent(Agent):
         except LLMError as e:
             log.warning("Executor final-report LLM call failed: %s", e)
             return None
-        except Exception as e:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             log.exception("Executor final-report crashed")
             return None
 

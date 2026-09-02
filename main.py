@@ -16,7 +16,6 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -28,7 +27,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-import logging
 from logging.handlers import RotatingFileHandler
 
 log_dir = os.path.join(BASE_DIR, "logs")
