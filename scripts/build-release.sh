@@ -12,7 +12,7 @@ echo "==> tarball trinity-${VERSION}.tar.gz"
 tar --exclude='.git' --exclude='.venv' --exclude='node_modules' --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.mypy_cache' --exclude='logs' --exclude='.trinity' -czf "trinity-${VERSION}.tar.gz" \
   main.py requirements.txt package.json package-lock.json vite.config.js tailwind.config.js postcss.config.js \
   ruff.toml .env.example README.md CHANGELOG.md LICENSE AGENT.md \
-  core/ agents/ tools/ trinity/ routers/ ui/ docs/ scripts/ systemd/ templates/ tests/ install.sh start.sh start.ps1 dist/
+  core/ agents/ tools/ trinity/ routers/ ui/ docs/ scripts/ systemd/ tests/ install.sh start.sh start.ps1 dist/
 echo "==> sha256"
 sha256sum "trinity-${VERSION}.tar.gz" | tee "trinity-${VERSION}.tar.gz.sha256"
 ls -lh "trinity-${VERSION}.tar.gz"
