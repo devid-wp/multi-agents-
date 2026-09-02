@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 - 2026-09-02 (public beta)
+
+- Security: `main.py:66` `localhost_only` adds `X-Content-Type-Options nosniff` + `X-Frame-Options DENY` + `Referrer-Policy no-referrer` + `Cache-Control no-store` for `/api/`, `GET /api/version` exempt from token
+- Cleanup: `static/` + `templates/` legacy dirs removed (mount deleted in 0.7.1, Vite `dist/` primary)
+- UI: `ui/index.html:57` version pill `Trinity · v0.9.0` + `ui/static/app.js:refreshVersion()` fetch `/api/version`, `ui/static/modules/config.js` `ENDPOINTS.version/backup`
+- Version: `package.json 0.9.0`, `main.py 0.9.0`, Vite 7→31.14k, 91 passed
+
 ## 0.8.1 - 2026-09-02 (beta viability)
 
 - Data: `TRINITY_DATA_DIR` env (`core/config.py:data_dir` + `core/db.py:_data_root()`) — external `.trinity` outside `WORKSPACE_DIR`, `BACKUP.md` updated

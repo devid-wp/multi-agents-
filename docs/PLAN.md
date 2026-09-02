@@ -78,6 +78,15 @@
 
 Критерий: `TRINITY_DATA_DIR=/tmp/test` → `db_path` external, `/api/backup` 200, `pytest 91 passed`, `ruff 0`, `mypy 0`.
 
+## Фаза 9 — Public Beta Polish (0.9.0) ✅ 2026-09-02
+
+- [x] Security: `main.py:66` headers `nosniff/DENY/no-referrer/no-store` + `GET /api/version` (`{"version": app.version}`) exempt from token
+- [x] Cleanup: `static/` + `templates/` dirs removed (1228 deletions, Vite `dist/` only)
+- [x] UI: `ui/index.html:57` version pill + `app.js:refreshVersion()` + `config.js` `version/backup` endpoints (Vite 31.14k)
+- [x] Versions: `package.json 0.9.0`, `main.py 0.9.0`, `ui/index.html v0.9.0`, `CHANGELOG 0.9.0`
+
+Критерий: `/api/version` 200 `v0.9.0`, headers `DENY`/`nosniff`, `pytest 91`, `npm build` 31.14k, no `static/`/`templates/`.
+
 ---
 
 ### Что НЕ делаем

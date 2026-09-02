@@ -1,5 +1,5 @@
 """
-main.py — FastAPI entry-point (0.8.1 beta viability).
+main.py — FastAPI entry-point (0.9.0 public beta).
 
 Эндпоинты вынесены в routers/*:
   routers/workspace  — /api/workspace/tree|file|stream
@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
     log.info("🛑 Trinity shutting down.")
 
 
-app = FastAPI(title="Trinity — Multi-Agent System", version="0.8.1", lifespan=lifespan)
+app = FastAPI(title="Trinity — Multi-Agent System", version="0.9.0", lifespan=lifespan)
 
 
 @app.middleware("http")
