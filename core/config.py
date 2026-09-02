@@ -108,6 +108,11 @@ class AppSettings(BaseSettings):
     # Rate-limit для /api/chat (Фаза 3)
     chat_rate_limit_per_minute: int = Field(default=20, ge=5, le=100)
 
+    # Фаза 8 — данные вне workspace для живучести беты
+    # Если задан — .trinity/* лежит в TRINITY_DATA_DIR, а не в WORKSPACE_DIR/.trinity
+    # Позволяет держать workspace чистым git-репозиторием.
+    data_dir: Optional[str] = Field(default=None, description="Optional external data dir for .trinity (TRINITY_DATA_DIR)")
+
 
 # Глобальный singleton — инициализируется один раз при импорте
 settings = AppSettings()

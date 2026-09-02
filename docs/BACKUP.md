@@ -2,7 +2,7 @@
 
 ## Где лежат данные
 
-Все персистентные данные — SQLite `.trinity/trinity.db` внутри `WORKSPACE_DIR`:
+По умолчанию — SQLite `.trinity/trinity.db` внутри `WORKSPACE_DIR`:
 
 ```
 $WORKSPACE_DIR/.trinity/trinity.db   # history, rooms, changes
@@ -10,13 +10,21 @@ $WORKSPACE_DIR/.trinity/              # создаётся при первом �
 logs/trinity.log                      # RotatingFileHandler 5MB x3
 ```
 
-> Если `WORKSPACE_DIR=.` (дефолт) — БД лежит прямо в корне проекта. Добавьте `.trinity/` в `.gitignore` (уже есть) и не коммитьте её.
+**Фаза 8 — живучесть беты:** задайте `TRINITY_DATA_DIR` (см. `.env.example`) чтобы вынести данные вне workspace:
+
+```bash
+TRINITY_DATA_DIR=/home/user/.local/share/trinity  # или ./ .trinity-data
+# тогда DB = $TRINITY_DATA_DIR/trinity.db
+```
+
+> Если `WORKSPACE_DIR=.` без `TRINITY_DATA_DIR` — БД в корне проекта. Добавьте `.trinity/` в `.gitignore` (уже есть) и не коммитьте её.
 
 ## Бэкап
 
 ```bash
 WORKSPACE_DIR=.  # или ваш путь
-DB="$WORKSPACE_DIR/.trinity/trinity.db"
+# если TRINITY_DATA_DIR задан — DB в нём, иначе в $WORKSPACE_DIR/.trinity
+DB="${TRINITY_DATA_DIR:-$WORKSPACE_DIR/.trinity}/trinity.db"
 
 # Холодный бэкап (остановите trinity или используйте sqlite3 backup):
 sqlite3 "$DB" ".backup '$HOME/trinity-backup-$(date +%F).db'"

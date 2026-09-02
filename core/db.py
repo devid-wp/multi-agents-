@@ -16,13 +16,25 @@ from pathlib import Path
 from core.config import settings
 
 
-def db_path(workspace: str) -> Path:
-    return Path(workspace) / ".trinity" / "trinity.db"
+def _data_root(workspace: str | None = None) -> Path:
+    # TRINITY_DATA_DIR > settings.data_dir > workspace/.trinity (compat)
+    # Поддерживает os.environ напрямую чтобы не требовать реимпорта settings в тестах
+    import os
+
+    env_dir = os.environ.get("TRINITY_DATA_DIR") or getattr(settings, "data_dir", None)
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+    ws = workspace or settings.workspace_dir
+    return Path(ws).resolve() / ".trinity"
+
+
+def db_path(workspace: str | None = None) -> Path:
+    # workspace param deprecated for external data_dir — игнорируется когда TRINITY_DATA_DIR задан
+    return _data_root(workspace) / "trinity.db"
 
 
 def init_db(workspace: str | None = None) -> Path:
-    ws = workspace or settings.workspace_dir
-    p = db_path(ws)
+    p = db_path(workspace)
     p.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(p))
     try:

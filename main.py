@@ -48,12 +48,12 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("SESSION_SECRET must be a unique random value of at least 32 characters")
     log.info("🚀 Trinity starting. workspace=%s", os.path.abspath(settings.workspace_dir))
     try:
-        from core.db import init_db, is_enabled, migrate_json_if_needed
+        from core.db import db_path, init_db, is_enabled, migrate_json_if_needed
 
         if is_enabled():
             init_db(settings.workspace_dir)
             migrate_json_if_needed(settings.workspace_dir)
-            log.info("SQLite backend enabled at %s", os.path.join(settings.workspace_dir, ".trinity/trinity.db"))
+            log.info("SQLite backend enabled at %s", db_path(settings.workspace_dir))
     except Exception as e:  # noqa: BLE001
         log.warning("SQLite init/migrate failed: %s", e)
     yield
